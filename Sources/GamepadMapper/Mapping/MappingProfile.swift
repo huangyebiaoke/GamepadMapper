@@ -68,12 +68,14 @@ enum ControllerElement: String, Codable, CaseIterable, Identifiable {
 enum MappingTarget: Equatable, Hashable, Identifiable {
     case key(CGKeyCode)
     case mouseButton(MouseButton)
+    case mouseDrag(MouseButton)
     case mouseMove
 
     var id: String {
         switch self {
         case .key(let code): return "key_\(code)"
         case .mouseButton(let btn): return "mb_\(btn.rawValue)"
+        case .mouseDrag(let btn): return "md_\(btn.rawValue)"
         case .mouseMove: return "mousemove"
         }
     }
@@ -84,6 +86,8 @@ enum MappingTarget: Equatable, Hashable, Identifiable {
             return KeyMappings.displayName(for: code)
         case .mouseButton(let btn):
             return btn.displayName
+        case .mouseDrag(let btn):
+            return btn.dragDisplayName
         case .mouseMove:
             return "target_mouse_move".localized
         }
@@ -93,6 +97,7 @@ enum MappingTarget: Equatable, Hashable, Identifiable {
         switch (lhs, rhs) {
         case (.key(let a), .key(let b)): return a == b
         case (.mouseButton(let a), .mouseButton(let b)): return a == b
+        case (.mouseDrag(let a), .mouseDrag(let b)): return a == b
         case (.mouseMove, .mouseMove): return true
         default: return false
         }
@@ -116,6 +121,9 @@ extension MappingTarget: Codable {
         case "mouseButton":
             let btn = try container.decode(MouseButton.self, forKey: .mouseButton)
             self = .mouseButton(btn)
+        case "mouseDrag":
+            let btn = try container.decode(MouseButton.self, forKey: .mouseButton)
+            self = .mouseDrag(btn)
         case "mouseMove":
             self = .mouseMove
         default:
@@ -132,6 +140,9 @@ extension MappingTarget: Codable {
             try container.encode(code, forKey: .keyCode)
         case .mouseButton(let btn):
             try container.encode("mouseButton", forKey: .type)
+            try container.encode(btn, forKey: .mouseButton)
+        case .mouseDrag(let btn):
+            try container.encode("mouseDrag", forKey: .type)
             try container.encode(btn, forKey: .mouseButton)
         case .mouseMove:
             try container.encode("mouseMove", forKey: .type)

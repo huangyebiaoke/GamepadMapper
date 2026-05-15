@@ -102,6 +102,9 @@
 "mouse_left" = "鼠标左键";
 "mouse_right" = "鼠标右键";
 "mouse_middle" = "鼠标中键";
+"mouse_left_drag" = "左键拖动";
+"mouse_right_drag" = "右键拖动";
+"mouse_middle_drag" = "中键拖动";
 
 /* Permission States */
 "permission_granted" = "已授权";

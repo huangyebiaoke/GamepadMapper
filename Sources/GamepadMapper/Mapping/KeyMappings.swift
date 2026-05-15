@@ -206,4 +206,12 @@ enum MouseButton: String, Codable, CaseIterable, Identifiable {
         case .center: return "mouse_middle".localized
         }
     }
+
+    var dragDisplayName: String {
+        switch self {
+        case .left: return "mouse_left_drag".localized
+        case .right: return "mouse_right_drag".localized
+        case .center: return "mouse_middle_drag".localized
+        }
+    }
 }

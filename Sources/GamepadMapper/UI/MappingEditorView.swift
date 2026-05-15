@@ -105,6 +105,9 @@ struct MappingEditorView: View {
                 ForEach(MouseButton.allCases) { btn in
                     Text(btn.displayName).tag(Optional<MappingTarget>.some(.mouseButton(btn)))
                 }
+                ForEach(MouseButton.allCases) { btn in
+                    Text(btn.dragDisplayName).tag(Optional<MappingTarget>.some(.mouseDrag(btn)))
+                }
                 Text("target_mouse_move".localized).tag(Optional<MappingTarget>.some(MappingTarget.mouseMove))
             }
             .frame(width: 140)

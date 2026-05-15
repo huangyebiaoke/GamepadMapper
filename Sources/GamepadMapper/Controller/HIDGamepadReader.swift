@@ -305,11 +305,25 @@ final class HIDGamepadReader: @unchecked Sendable {
 
         // Handle hat switch (D-pad)
         if usagePage == UInt32(kHIDPage_GenericDesktop) && usage == UInt32(kHIDUsage_GD_Hatswitch) {
-            // Hat switch values: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW, 8=neutral
-            _state.dpadUp = (intValue == 0 || intValue == 1 || intValue == 7) ? 1.0 : 0.0
-            _state.dpadDown = (intValue == 3 || intValue == 4 || intValue == 5) ? 1.0 : 0.0
-            _state.dpadLeft = (intValue == 5 || intValue == 6 || intValue == 7) ? 1.0 : 0.0
-            _state.dpadRight = (intValue == 1 || intValue == 2 || intValue == 3) ? 1.0 : 0.0
+            // Hat switch: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW, 8=neutral
+            // Diagonals snap to the NEAREST cardinal direction (vertical priority).
+            // This avoids the original "db" bug where SW=5 fired BOTH Down+Left keys.
+            switch intValue {
+            case 0: // N
+                _state.dpadUp = 1.0; _state.dpadDown = 0.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
+            case 1, 7: // NE, NW → Up
+                _state.dpadUp = 1.0; _state.dpadDown = 0.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
+            case 2: // E
+                _state.dpadUp = 0.0; _state.dpadDown = 0.0; _state.dpadLeft = 0.0; _state.dpadRight = 1.0
+            case 3, 5: // SE, SW → Down
+                _state.dpadUp = 0.0; _state.dpadDown = 1.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
+            case 4: // S
+                _state.dpadUp = 0.0; _state.dpadDown = 1.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
+            case 6: // W
+                _state.dpadUp = 0.0; _state.dpadDown = 0.0; _state.dpadLeft = 1.0; _state.dpadRight = 0.0
+            default: // 8 or anything else = neutral
+                _state.dpadUp = 0.0; _state.dpadDown = 0.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
+            }
         }
     }
 

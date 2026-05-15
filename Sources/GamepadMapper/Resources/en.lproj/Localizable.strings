@@ -102,6 +102,9 @@
 "mouse_left" = "Mouse Left";
 "mouse_right" = "Mouse Right";
 "mouse_middle" = "Mouse Middle";
+"mouse_left_drag" = "Left Drag";
+"mouse_right_drag" = "Right Drag";
+"mouse_middle_drag" = "Middle Drag";
 
 /* Permission States */
 "permission_granted" = "GRANTED";

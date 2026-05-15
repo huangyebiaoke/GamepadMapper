@@ -23,8 +23,10 @@ final class MappingEngine {
 
     /// Tracks which keys are currently held down. Protected by lock.
     private var activeKeys: Set<CGKeyCode> = []
-    /// Tracks which mouse buttons are currently held down. Protected by lock.
+    /// Tracks which mouse buttons are currently held down (click mappings). Protected by lock.
     private var activeMouseButtons: Set<MouseButton> = []
+    /// Tracks which mouse buttons are held as drag anchors. Protected by lock.
+    private var activeDragButtons: Set<MouseButton> = []
 
     /// Protects mutable state accessed from the background poll queue.
     private let lock = NSLock()
@@ -85,22 +87,9 @@ final class MappingEngine {
         timer.schedule(deadline: .now(), repeating: .milliseconds(8), leeway: .nanoseconds(0))
 
         var pollCount = 0
-        var lastLogTime = DispatchTime.now()
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             pollCount += 1
-
-            // Log heartbeat every ~1 second (120 polls at 8ms)
-            if pollCount % 120 == 0 {
-                let now = DispatchTime.now()
-                let elapsedMs = Double(now.uptimeNanoseconds - lastLogTime.uptimeNanoseconds) / 1_000_000
-                lastLogTime = now
-                let hid = HIDGamepadReader.shared
-                let aVal = hid.value(for: .buttonA)
-                let bVal = hid.value(for: .buttonB)
-                let msg = "HB #\(pollCount) \(String(format: "%.0f", elapsedMs))ms entries=\(self.cachedEntries.count) A=\(aVal) B=\(bVal)"
-                EngineLogger.log(msg)
-            }
 
             self.poll()
         }
@@ -206,6 +195,16 @@ final class MappingEngine {
                 postMouseEvent(button: btn, down: false)
             }
 
+        case .mouseDrag(let btn):
+            let btnIsDown = activeDragButtons.contains(btn)
+            if isPressed && !btnIsDown {
+                postMouseEvent(button: btn, down: true)
+                activeDragButtons.insert(btn)
+            } else if !isPressed && btnIsDown {
+                activeDragButtons.remove(btn)
+                postMouseEvent(button: btn, down: false)
+            }
+
         case .mouseMove:
             break
         }
@@ -222,6 +221,9 @@ final class MappingEngine {
 
         case .mouseButton(let btn):
             processAnalogToMouseButtonLocked(value: value, button: btn, threshold: entry.analogThreshold)
+
+        case .mouseDrag:
+            break  // drag only applies to binary button inputs
 
         case .mouseMove:
             processAnalogToMouseMoveLocked(value: value, entry: entry, sensitivity: sensitivity)
@@ -362,8 +364,15 @@ final class MappingEngine {
         case (.center, false): mouseType = .otherMouseUp
         }
 
-        let mousePos = DispatchQueue.main.sync {
-            NSEvent.mouseLocation.flipped
+        // Use tracked cursor position when available to avoid jumps between
+        // warp-based moves and button down/up events. Caller holds the lock.
+        let mousePos: CGPoint
+        if let tracked = trackedCursorPos {
+            mousePos = tracked
+        } else {
+            mousePos = DispatchQueue.main.sync {
+                NSEvent.mouseLocation.flipped
+            }
         }
 
         guard let event = CGEvent(
@@ -412,11 +421,21 @@ final class MappingEngine {
         CGWarpMouseCursorPosition(newPos)
         trackedCursorPos = newPos
 
+        // If a drag button is held, post a drag event instead of a plain move.
+        let dragBtn = activeDragButtons.first
+        let eventType: CGEventType
+        switch dragBtn {
+        case .left: eventType = .leftMouseDragged
+        case .right: eventType = .rightMouseDragged
+        case .center: eventType = .otherMouseDragged
+        case nil: eventType = .mouseMoved
+        }
+
         if let event = CGEvent(
             mouseEventSource: eventSource,
-            mouseType: .mouseMoved,
+            mouseType: eventType,
             mouseCursorPosition: newPos,
-            mouseButton: .left
+            mouseButton: dragBtn?.cgMouseButton ?? .left
         ) {
             event.setIntegerValueField(.mouseEventDeltaX, value: Int64(deltaX))
             event.setIntegerValueField(.mouseEventDeltaY, value: Int64(deltaY))
@@ -444,6 +463,10 @@ final class MappingEngine {
             postMouseEvent(button: button, down: false)
         }
         activeMouseButtons.removeAll()
+        for button in activeDragButtons {
+            postMouseEvent(button: button, down: false)
+        }
+        activeDragButtons.removeAll()
     }
 }
 
