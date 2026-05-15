@@ -1,0 +1,114 @@
+/* App Name */
+"app_name" = "GamepadMapper";
+
+/* Menu Bar */
+"menu_open_settings" = "設定を開く...";
+"menu_debug_info" = "デバッグ情報...";
+"menu_start_mapping" = "マッピング開始";
+"menu_stop_mapping" = "マッピング停止";
+"menu_quit" = "GamepadMapperを終了";
+"menu_engine_log" = "エンジンログ";
+
+/* Content View */
+"no_controller" = "コントローラーなし";
+"unknown_controller" = "不明なコントローラー";
+"profile_label" = "プロファイル:";
+"edit_mappings" = "マッピングを編集";
+"profiles_button" = "プロフィール";
+"start_mapping" = "マッピング開始";
+"stop_mapping" = "マッピング停止";
+"active" = "動作中";
+
+/* Controller Status */
+"left_stick" = "Lスティック";
+"right_stick" = "Rスティック";
+
+/* Mapping Editor */
+"edit_mappings_title" = "マッピング編集 — %@";
+"sensitivity_label" = "感度: %d";
+"direction_positive" = "正方向";
+"direction_negative" = "負方向";
+"target_none" = "なし";
+"target_mouse_move" = "マウス移動";
+"add_mapping" = "マッピングを追加";
+"done" = "完了";
+
+/* Profile Selector */
+"profiles_title" = "プロファイル管理";
+"new_profile" = "新規プロファイル";
+"reset_default" = "デフォルトに戻す";
+"duplicate" = "複製";
+"rename" = "名前を変更";
+"delete" = "削除";
+"profile_name_placeholder" = "プロファイル名";
+"cancel" = "キャンセル";
+"create" = "作成";
+"save" = "保存";
+"rename_profile" = "プロファイル名を変更";
+"profile_name_default" = "デフォルト";
+
+/* Permission Prompt */
+"permission_title" = "アクセシビリティ権限が必要です";
+"permission_description" = "GamepadMapperはキーボードとマウスを操作する権限が必要です。";
+"permission_step1" = "1. 下のボタンをクリックしてシステム設定を開く";
+"permission_step2" = "2. アクセシビリティリストでGamepadMapperを探す";
+"permission_step3" = "3. スイッチをオンにする";
+"open_system_settings" = "システム設定を開く";
+"check_permission" = "権限を確認";
+
+/* Debug View */
+"debug_title" = "デバッグ情報";
+"debug_permission" = "アクセシビリティ権限:";
+"debug_controller" = "コントローラー接続:";
+"debug_engine" = "エンジン状態:";
+"debug_profile" = "アクティブプロファイル:";
+"debug_entries" = "マッピング数:";
+"debug_buttons" = "ボタン状態:";
+"debug_stick_l" = "Lスティック:";
+"debug_stick_r" = "Rスティック:";
+"debug_triggers" = "トリガー:";
+"debug_dpad" = "十字キー:";
+"open_accessibility_settings" = "アクセシビリティ設定を開く";
+
+/* Controller Elements */
+"dpad_up" = "十字キー 上";
+"dpad_down" = "十字キー 下";
+"dpad_left" = "十字キー 左";
+"dpad_right" = "十字キー 右";
+"button_a" = "A";
+"button_b" = "B";
+"button_x" = "X";
+"button_y" = "Y";
+"left_shoulder" = "LB";
+"right_shoulder" = "RB";
+"left_trigger" = "LT";
+"right_trigger" = "RT";
+"left_stick_x" = "Lスティック X";
+"left_stick_y" = "Lスティック Y";
+"right_stick_x" = "Rスティック X";
+"right_stick_y" = "Rスティック Y";
+"left_thumbstick_button" = "L3";
+"right_thumbstick_button" = "R3";
+
+/* Categories */
+"category_dpad" = "十字キー";
+"category_face_buttons" = "フェースボタン";
+"category_shoulder" = "ショルダー";
+"category_triggers" = "トリガー";
+"category_left_stick" = "Lスティック";
+"category_right_stick" = "Rスティック";
+
+/* Mouse Buttons */
+"mouse_left" = "マウス左";
+"mouse_right" = "マウス右";
+"mouse_middle" = "マウス中央";
+
+/* Permission States */
+"permission_granted" = "許可済み";
+"permission_denied" = "拒否";
+"yes" = "はい";
+"no" = "いいえ";
+
+/* Language */
+"language_label" = "言語:";
+"language" = "言語";

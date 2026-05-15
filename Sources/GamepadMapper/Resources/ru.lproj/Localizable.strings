@@ -1,0 +1,114 @@
+/* App Name */
+"app_name" = "GamepadMapper";
+
+/* Menu Bar */
+"menu_open_settings" = "Открыть настройки...";
+"menu_debug_info" = "Отладка...";
+"menu_start_mapping" = "Начать маппинг";
+"menu_stop_mapping" = "Остановить маппинг";
+"menu_quit" = "Выйти из GamepadMapper";
+"menu_engine_log" = "Журнал движка";
+
+/* Content View */
+"no_controller" = "Нет контроллера";
+"unknown_controller" = "Неизвестный контроллер";
+"profile_label" = "Профиль:";
+"edit_mappings" = "Редактировать маппинг";
+"profiles_button" = "Профили";
+"start_mapping" = "Начать маппинг";
+"stop_mapping" = "Остановить маппинг";
+"active" = "Активен";
+
+/* Controller Status */
+"left_stick" = "L-стик";
+"right_stick" = "R-стик";
+
+/* Mapping Editor */
+"edit_mappings_title" = "Редактирование — %@";
+"sensitivity_label" = "Чувствительность: %d";
+"direction_positive" = "Положительное";
+"direction_negative" = "Отрицательное";
+"target_none" = "Нет";
+"target_mouse_move" = "Движение мыши";
+"add_mapping" = "Добавить маппинг";
+"done" = "Готово";
+
+/* Profile Selector */
+"profiles_title" = "Управление профилями";
+"new_profile" = "Новый профиль";
+"reset_default" = "Сбросить по умолчанию";
+"duplicate" = "Дублировать";
+"rename" = "Переименовать";
+"delete" = "Удалить";
+"profile_name_placeholder" = "Название профиля";
+"cancel" = "Отмена";
+"create" = "Создать";
+"save" = "Сохранить";
+"rename_profile" = "Переименовать профиль";
+"profile_name_default" = "По умолчанию";
+
+/* Permission Prompt */
+"permission_title" = "Требуется разрешение на универсальный доступ";
+"permission_description" = "GamepadMapper требует разрешения для управления клавиатурой и мышью.";
+"permission_step1" = "1. Нажмите кнопку ниже, чтобы открыть Системные настройки";
+"permission_step2" = "2. Найдите GamepadMapper в списке Универсального доступа";
+"permission_step3" = "3. Включите переключатель";
+"open_system_settings" = "Открыть Системные настройки";
+"check_permission" = "Проверить разрешение";
+
+/* Debug View */
+"debug_title" = "Отладочная информация";
+"debug_permission" = "Разрешение универсального доступа:";
+"debug_controller" = "Контроллер подключён:";
+"debug_engine" = "Состояние движка:";
+"debug_profile" = "Активный профиль:";
+"debug_entries" = "Записей в профиле:";
+"debug_buttons" = "Состояние кнопок:";
+"debug_stick_l" = "L-стик:";
+"debug_stick_r" = "R-стик:";
+"debug_triggers" = "Триггеры:";
+"debug_dpad" = "D-Pad:";
+"open_accessibility_settings" = "Открыть настройки Универсального доступа";
+
+/* Controller Elements */
+"dpad_up" = "D-Pad Вверх";
+"dpad_down" = "D-Pad Вниз";
+"dpad_left" = "D-Pad Влево";
+"dpad_right" = "D-Pad Вправо";
+"button_a" = "A";
+"button_b" = "B";
+"button_x" = "X";
+"button_y" = "Y";
+"left_shoulder" = "LB";
+"right_shoulder" = "RB";
+"left_trigger" = "LT";
+"right_trigger" = "RT";
+"left_stick_x" = "L-стик X";
+"left_stick_y" = "L-стик Y";
+"right_stick_x" = "R-стик X";
+"right_stick_y" = "R-стик Y";
+"left_thumbstick_button" = "L3";
+"right_thumbstick_button" = "R3";
+
+/* Categories */
+"category_dpad" = "D-Pad";
+"category_face_buttons" = "Основные кнопки";
+"category_shoulder" = "Бамперы";
+"category_triggers" = "Триггеры";
+"category_left_stick" = "L-стик";
+"category_right_stick" = "R-стик";
+
+/* Mouse Buttons */
+"mouse_left" = "Левая кнопка мыши";
+"mouse_right" = "Правая кнопка мыши";
+"mouse_middle" = "Средняя кнопка мыши";
+
+/* Permission States */
+"permission_granted" = "РАЗРЕШЕНО";
+"permission_denied" = "ЗАПРЕЩЕНО";
+"yes" = "Да";
+"no" = "Нет";
+
+/* Language */
+"language_label" = "Язык:";
+"language" = "Язык";

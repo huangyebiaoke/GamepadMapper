@@ -1,0 +1,114 @@
+/* App Name */
+"app_name" = "GamepadMapper";
+
+/* Menu Bar */
+"menu_open_settings" = "Open Settings";
+"menu_debug_info" = "Debug Info";
+"menu_start_mapping" = "Start Mapping";
+"menu_stop_mapping" = "Stop Mapping";
+"menu_quit" = "Quit GamepadMapper";
+"menu_engine_log" = "Engine Log";
+
+/* Content View */
+"no_controller" = "No Controller";
+"unknown_controller" = "Unknown Controller";
+"profile_label" = "Profile:";
+"edit_mappings" = "Edit Mappings";
+"profiles_button" = "Profiles";
+"start_mapping" = "Start Mapping";
+"stop_mapping" = "Stop Mapping";
+"active" = "Active";
+
+/* Controller Status */
+"left_stick" = "L-Stick";
+"right_stick" = "R-Stick";
+
+/* Mapping Editor */
+"edit_mappings_title" = "Edit Mappings — %@";
+"sensitivity_label" = "Sensitivity: %d";
+"direction_positive" = "Positive";
+"direction_negative" = "Negative";
+"target_none" = "None";
+"target_mouse_move" = "Mouse Move";
+"add_mapping" = "Add Mapping";
+"done" = "Done";
+
+/* Profile Selector */
+"profiles_title" = "Profiles";
+"new_profile" = "New Profile";
+"reset_default" = "Reset Default";
+"duplicate" = "Duplicate";
+"rename" = "Rename";
+"delete" = "Delete";
+"profile_name_placeholder" = "Profile Name";
+"cancel" = "Cancel";
+"create" = "Create";
+"save" = "Save";
+"rename_profile" = "Rename Profile";
+"profile_name_default" = "Default";
+
+/* Permission Prompt */
+"permission_title" = "Accessibility Permission Required";
+"permission_description" = "GamepadMapper needs permission to control your keyboard and mouse.";
+"permission_step1" = "1. Click the button below to open System Settings";
+"permission_step2" = "2. Find GamepadMapper in the Accessibility list";
+"permission_step3" = "3. Toggle it on";
+"open_system_settings" = "Open System Settings";
+"check_permission" = "Check Permission";
+
+/* Debug View */
+"debug_title" = "Debug Info";
+"debug_permission" = "Accessibility Permission:";
+"debug_controller" = "Controller Connected:";
+"debug_engine" = "Engine Active:";
+"debug_profile" = "Active Profile:";
+"debug_entries" = "Profile Entries:";
+"debug_buttons" = "Button States:";
+"debug_stick_l" = "Stick L:";
+"debug_stick_r" = "Stick R:";
+"debug_triggers" = "Triggers:";
+"debug_dpad" = "D-Pad:";
+"open_accessibility_settings" = "Open Accessibility Settings";
+
+/* Controller Elements */
+"dpad_up" = "D-Pad Up";
+"dpad_down" = "D-Pad Down";
+"dpad_left" = "D-Pad Left";
+"dpad_right" = "D-Pad Right";
+"button_a" = "A";
+"button_b" = "B";
+"button_x" = "X";
+"button_y" = "Y";
+"left_shoulder" = "LB";
+"right_shoulder" = "RB";
+"left_trigger" = "LT";
+"right_trigger" = "RT";
+"left_stick_x" = "Left Stick X";
+"left_stick_y" = "Left Stick Y";
+"right_stick_x" = "Right Stick X";
+"right_stick_y" = "Right Stick Y";
+"left_thumbstick_button" = "L3";
+"right_thumbstick_button" = "R3";
+
+/* Categories */
+"category_dpad" = "D-Pad";
+"category_face_buttons" = "Face Buttons";
+"category_shoulder" = "Shoulder";
+"category_triggers" = "Triggers";
+"category_left_stick" = "Left Stick";
+"category_right_stick" = "Right Stick";
+
+/* Mouse Buttons */
+"mouse_left" = "Mouse Left";
+"mouse_right" = "Mouse Right";
+"mouse_middle" = "Mouse Middle";
+
+/* Permission States */
+"permission_granted" = "GRANTED";
+"permission_denied" = "DENIED";
+"yes" = "Yes";
+"no" = "No";
+
+/* Language */
+"language_label" = "Language:";
+"language" = "Language";

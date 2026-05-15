@@ -1,0 +1,457 @@
+@preconcurrency import AppKit
+import CoreGraphics
+import Foundation
+import Observation
+
+/// Translates gamepad state changes into keyboard and mouse events via CGEvent.
+/// Runs entirely on a background thread to ensure reliable operation even when
+/// the app is in the background and the main run loop is idle.
+@Observable
+final class MappingEngine {
+    static let shared = MappingEngine()
+
+    private let queue = DispatchQueue(label: "com.gamepadmapper.engine", qos: .userInteractive)
+
+    /// Published on main thread for UI binding.
+    @MainActor var isActive = false
+
+    /// Cached profile entries for background polling. Updated from main thread.
+    private var cachedEntries: [MappingEntry] = []
+    private var cachedSensitivity: Float = 15.0
+
+    private let eventSource: CGEventSource
+
+    /// Tracks which keys are currently held down. Protected by lock.
+    private var activeKeys: Set<CGKeyCode> = []
+    /// Tracks which mouse buttons are currently held down. Protected by lock.
+    private var activeMouseButtons: Set<MouseButton> = []
+
+    /// Protects mutable state accessed from the background poll queue.
+    private let lock = NSLock()
+
+    private var pollTimer: DispatchSourceTimer?
+    private var activityAssertion: NSObjectProtocol?
+
+    /// Tracks the cursor position we set via CGWarpMouseCursorPosition.
+    private var trackedCursorPos: CGPoint?
+    /// Frame counter for periodic cursor re-sync.
+    private var frameCount: Int = 0
+
+    private init() {
+        self.eventSource = CGEventSource(stateID: .privateState)!
+    }
+
+    // MARK: - Start / Stop
+
+    func start() {
+        // Grab state from main-thread singletons, then start on background queue.
+        Task { @MainActor in
+            let hid = HIDGamepadReader.shared
+            hid.start()
+            // Keep GameControllerManager for UI status display
+            GameControllerManager.shared.startMonitoring()
+
+            let pm = ProfileManager.shared
+            let entries = pm.activeProfile?.entries ?? []
+            let sensitivity = Float(pm.activeProfile?.mouseSensitivity ?? 15.0)
+
+            queue.async { [weak self] in
+                self?.startOnQueue(entries: entries, sensitivity: sensitivity)
+            }
+        }
+    }
+
+    private func startOnQueue(entries: [MappingEntry], sensitivity: Float) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard pollTimer == nil else { return }
+
+        cachedEntries = entries
+        cachedSensitivity = sensitivity
+
+        let startMsg = "startOnQueue: entries=\(entries.count)"
+        EngineLogger.clear()
+        EngineLogger.log(startMsg)
+
+        // Prevent App Nap
+        activityAssertion = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .latencyCritical],
+            reason: "Gamepad polling requires real-time response"
+        )
+
+        // DispatchSourceTimer fires on this background queue — no main actor hop needed.
+        let timer = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(8), leeway: .nanoseconds(0))
+
+        var pollCount = 0
+        var lastLogTime = DispatchTime.now()
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            pollCount += 1
+
+            // Log heartbeat every ~1 second (120 polls at 8ms)
+            if pollCount % 120 == 0 {
+                let now = DispatchTime.now()
+                let elapsedMs = Double(now.uptimeNanoseconds - lastLogTime.uptimeNanoseconds) / 1_000_000
+                lastLogTime = now
+                let hid = HIDGamepadReader.shared
+                let aVal = hid.value(for: .buttonA)
+                let bVal = hid.value(for: .buttonB)
+                let msg = "HB #\(pollCount) \(String(format: "%.0f", elapsedMs))ms entries=\(self.cachedEntries.count) A=\(aVal) B=\(bVal)"
+                EngineLogger.log(msg)
+            }
+
+            self.poll()
+        }
+        timer.resume()
+        pollTimer = timer
+
+        Task { @MainActor in
+            isActive = true
+        }
+
+        NSLog("[MappingEngine] Started on background queue. Entries: \(entries.count)")
+    }
+
+    func stop() {
+        queue.async { [weak self] in
+            self?.stopOnQueue()
+        }
+    }
+
+    private func stopOnQueue() {
+        EngineLogger.log("STOP called")
+        lock.lock()
+        defer { lock.unlock() }
+
+        pollTimer?.cancel()
+        pollTimer = nil
+        trackedCursorPos = nil
+        releaseAllKeysLocked()
+        releaseAllMouseButtonsLocked()
+        cachedEntries = []
+
+        if let assertion = activityAssertion {
+            ProcessInfo.processInfo.endActivity(assertion)
+            activityAssertion = nil
+        }
+
+        Task { @MainActor in
+            isActive = false
+            HIDGamepadReader.shared.stop()
+            GameControllerManager.shared.stopMonitoring()
+        }
+    }
+
+    /// Call from main thread when the active profile changes.
+    @MainActor
+    func refreshProfileCache() {
+        let pm = ProfileManager.shared
+        let entries = pm.activeProfile?.entries ?? []
+        let sensitivity = Float(pm.activeProfile?.mouseSensitivity ?? 15.0)
+        queue.async { [weak self] in
+            self?.lock.lock()
+            defer { self?.lock.unlock() }
+            self?.cachedEntries = entries
+            self?.cachedSensitivity = sensitivity
+        }
+    }
+
+    // MARK: - Polling (runs on background queue, no @MainActor)
+
+    private func poll() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard pollTimer != nil else { return }
+        guard !cachedEntries.isEmpty else { return }
+
+        let hid = HIDGamepadReader.shared
+        let sensitivity = cachedSensitivity
+        let entries = cachedEntries
+
+        for entry in entries {
+            let value = hid.value(for: entry.source)
+            if entry.source.isAnalog {
+                processAnalogMappingLocked(value: value, entry: entry, sensitivity: sensitivity)
+            } else {
+                processButtonMappingLocked(value: value, entry: entry)
+            }
+        }
+    }
+
+    // MARK: - Binary Button Mapping (lock must be held)
+
+    private func processButtonMappingLocked(value: Float, entry: MappingEntry) {
+        guard let target = entry.target else { return }
+        let isPressed = value > 0.5
+
+        switch target {
+        case .key(let keyCode):
+            let keyIsDown = activeKeys.contains(keyCode)
+            if isPressed && !keyIsDown {
+                EngineLogger.log("Button pressed: \(entry.source.rawValue) val=\(value) -> key \(keyCode)")
+                postKeyEvent(keyCode: keyCode, down: true)
+            } else if !isPressed && keyIsDown {
+                EngineLogger.log("Button released: \(entry.source.rawValue) val=\(value) -> key \(keyCode)")
+                postKeyEvent(keyCode: keyCode, down: false)
+            }
+
+        case .mouseButton(let btn):
+            let btnIsDown = activeMouseButtons.contains(btn)
+            if isPressed && !btnIsDown {
+                postMouseEvent(button: btn, down: true)
+            } else if !isPressed && btnIsDown {
+                postMouseEvent(button: btn, down: false)
+            }
+
+        case .mouseMove:
+            break
+        }
+    }
+
+    // MARK: - Analog Mapping (lock must be held)
+
+    private func processAnalogMappingLocked(value: Float, entry: MappingEntry, sensitivity: Float) {
+        guard let target = entry.target else { return }
+
+        switch target {
+        case .key(let keyCode):
+            processAnalogToKeyLocked(value: value, keyCode: keyCode, entry: entry)
+
+        case .mouseButton(let btn):
+            processAnalogToMouseButtonLocked(value: value, button: btn, threshold: entry.analogThreshold)
+
+        case .mouseMove:
+            processAnalogToMouseMoveLocked(value: value, entry: entry, sensitivity: sensitivity)
+        }
+    }
+
+    // MARK: - Analog → Key (lock must be held)
+
+    private func processAnalogToKeyLocked(value: Float, keyCode: CGKeyCode, entry: MappingEntry) {
+        let shouldPress: Bool
+        switch entry.direction {
+        case .positive:
+            shouldPress = value > entry.deadzone
+        case .negative:
+            shouldPress = value < -entry.deadzone
+        }
+
+        let isPressed = activeKeys.contains(keyCode)
+        if shouldPress && !isPressed {
+            postKeyEvent(keyCode: keyCode, down: true)
+        } else if !shouldPress && isPressed {
+            postKeyEvent(keyCode: keyCode, down: false)
+        }
+    }
+
+    // MARK: - Analog → Mouse Button (lock must be held)
+
+    private func processAnalogToMouseButtonLocked(value: Float, button: MouseButton, threshold: Float) {
+        let shouldPress = value > threshold
+        let isPressed = activeMouseButtons.contains(button)
+
+        if shouldPress && !isPressed {
+            postMouseEvent(button: button, down: true)
+        } else if !shouldPress && isPressed {
+            postMouseEvent(button: button, down: false)
+        }
+    }
+
+    // MARK: - Analog → Mouse Move (lock must be held)
+
+    private func processAnalogToMouseMoveLocked(value: Float, entry: MappingEntry, sensitivity: Float) {
+        switch entry.direction {
+        case .positive:
+            guard value > entry.deadzone else { return }
+        case .negative:
+            guard value < -entry.deadzone else { return }
+        }
+
+        let absValue = abs(value)
+        let deadzone = entry.deadzone
+        let normalized = Float((Double(absValue) - Double(deadzone)) / (1.0 - Double(deadzone)))
+        let delta = normalized * sensitivity
+
+        var deltaX: Float = 0
+        var deltaY: Float = 0
+
+        switch entry.source {
+        case .rightStickX, .leftStickX:
+            deltaX = delta * (value > 0 ? 1 : -1)
+        case .rightStickY, .leftStickY:
+            // Flip Y axis: HID reports positive=up but screen Y is positive=down
+            deltaY = delta * (value > 0 ? 1 : -1)
+        default:
+            break
+        }
+
+        if deltaX != 0 || deltaY != 0 {
+            postMouseMove(deltaX: deltaX, deltaY: deltaY)
+        }
+    }
+
+    // MARK: - CGEvent: Keyboard (called from background queue)
+
+    private func postKeyEvent(keyCode: CGKeyCode, down: Bool) {
+        guard let event = CGEvent(
+            keyboardEventSource: eventSource,
+            virtualKey: keyCode,
+            keyDown: down
+        ) else {
+            EngineLogger.log("FAILED to create CGEvent for key \(keyCode)")
+            return
+        }
+
+        if down, let character = unicodeCharacter(for: keyCode) {
+            let utf16 = Array(character.utf16)
+            utf16.withUnsafeBufferPointer { buffer in
+                if let base = buffer.baseAddress {
+                    event.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
+                }
+            }
+        }
+
+        event.flags = cgEventFlags(for: keyCode)
+        event.post(tap: .cghidEventTap)
+        EngineLogger.log("Key \(down ? "DOWN" : "UP") code=\(keyCode)")
+
+        if down {
+            activeKeys.insert(keyCode)
+        } else {
+            activeKeys.remove(keyCode)
+        }
+    }
+
+    private func unicodeCharacter(for keyCode: CGKeyCode) -> String? {
+        let charMap: [CGKeyCode: String] = [
+            0x00: "a", 0x0B: "b", 0x08: "c", 0x02: "d", 0x0E: "e", 0x03: "f",
+            0x05: "g", 0x04: "h", 0x22: "i", 0x26: "j", 0x28: "k", 0x25: "l",
+            0x2E: "m", 0x2D: "n", 0x1F: "o", 0x23: "p", 0x0C: "q", 0x0F: "r",
+            0x01: "s", 0x11: "t", 0x20: "u", 0x09: "v", 0x0D: "w", 0x07: "x",
+            0x10: "y", 0x06: "z",
+            0x1D: "0", 0x12: "1", 0x13: "2", 0x14: "3", 0x15: "4",
+            0x17: "5", 0x16: "6", 0x1A: "7", 0x1C: "8", 0x19: "9",
+            0x31: " ", 0x24: "\r", 0x30: "\t",
+        ]
+        return charMap[keyCode]
+    }
+
+    private func cgEventFlags(for keyCode: CGKeyCode) -> CGEventFlags {
+        switch keyCode {
+        case 0x38, 0x3C: return .maskShift
+        case 0x3B, 0x3E: return .maskControl
+        case 0x3A, 0x3D: return .maskAlternate
+        case 0x37, 0x36: return .maskCommand
+        default: return []
+        }
+    }
+
+    // MARK: - CGEvent: Mouse Button (called from background queue)
+
+    private func postMouseEvent(button: MouseButton, down: Bool) {
+        let mouseType: CGEventType
+        switch (button, down) {
+        case (.left, true): mouseType = .leftMouseDown
+        case (.left, false): mouseType = .leftMouseUp
+        case (.right, true): mouseType = .rightMouseDown
+        case (.right, false): mouseType = .rightMouseUp
+        case (.center, true): mouseType = .otherMouseDown
+        case (.center, false): mouseType = .otherMouseUp
+        }
+
+        let mousePos = DispatchQueue.main.sync {
+            NSEvent.mouseLocation.flipped
+        }
+
+        guard let event = CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: mouseType,
+            mouseCursorPosition: mousePos,
+            mouseButton: button.cgMouseButton
+        ) else {
+            EngineLogger.log("FAILED to create mouse event for \(button.rawValue)")
+            return
+        }
+
+        event.post(tap: .cghidEventTap)
+        EngineLogger.log("Mouse \(down ? "DOWN" : "UP") \(button.rawValue)")
+
+        if down {
+            activeMouseButtons.insert(button)
+        } else {
+            activeMouseButtons.remove(button)
+        }
+    }
+
+    // MARK: - CGEvent: Mouse Move (called from background queue, lock must be held)
+
+    private func postMouseMove(deltaX: Float, deltaY: Float) {
+        frameCount += 1
+        let shouldSync = frameCount % 60 == 0
+
+        let currentPos: CGPoint
+        if let tracked = trackedCursorPos, !shouldSync {
+            currentPos = tracked
+        } else {
+            if let mouseEvent = CGEvent(source: eventSource) {
+                currentPos = mouseEvent.location
+            } else {
+                currentPos = DispatchQueue.main.sync { NSEvent.mouseLocation.flipped }
+            }
+            trackedCursorPos = currentPos
+        }
+
+        let newPos = CGPoint(
+            x: currentPos.x + Double(deltaX),
+            y: currentPos.y + Double(deltaY)
+        )
+
+        CGWarpMouseCursorPosition(newPos)
+        trackedCursorPos = newPos
+
+        if let event = CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: .mouseMoved,
+            mouseCursorPosition: newPos,
+            mouseButton: .left
+        ) {
+            event.setIntegerValueField(.mouseEventDeltaX, value: Int64(deltaX))
+            event.setIntegerValueField(.mouseEventDeltaY, value: Int64(deltaY))
+            event.post(tap: .cghidEventTap)
+        }
+    }
+
+    // MARK: - Cleanup (lock must be held)
+
+    private func releaseAllKeysLocked() {
+        for keyCode in activeKeys {
+            if let event = CGEvent(
+                keyboardEventSource: eventSource,
+                virtualKey: keyCode,
+                keyDown: false
+            ) {
+                event.post(tap: .cghidEventTap)
+            }
+        }
+        activeKeys.removeAll()
+    }
+
+    private func releaseAllMouseButtonsLocked() {
+        for button in activeMouseButtons {
+            postMouseEvent(button: button, down: false)
+        }
+        activeMouseButtons.removeAll()
+    }
+}
+
+// MARK: - NSPoint Extension
+
+private extension NSPoint {
+    var flipped: CGPoint {
+        let screenFrame = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        return CGPoint(x: x, y: screenFrame.height - y)
+    }
+}

@@ -1,0 +1,114 @@
+/* App Name */
+"app_name" = "GamepadMapper";
+
+/* Menu Bar */
+"menu_open_settings" = "打开设置";
+"menu_debug_info" = "调试信息";
+"menu_start_mapping" = "开始映射";
+"menu_stop_mapping" = "停止映射";
+"menu_quit" = "退出 GamepadMapper";
+"menu_engine_log" = "引擎日志";
+
+/* Content View */
+"no_controller" = "未连接手柄";
+"unknown_controller" = "未知手柄";
+"profile_label" = "方案:";
+"edit_mappings" = "编辑映射";
+"profiles_button" = "方案管理";
+"start_mapping" = "开始映射";
+"stop_mapping" = "停止映射";
+"active" = "运行中";
+
+/* Controller Status */
+"left_stick" = "左摇杆";
+"right_stick" = "右摇杆";
+
+/* Mapping Editor */
+"edit_mappings_title" = "编辑映射 — %@";
+"sensitivity_label" = "灵敏度: %d";
+"direction_positive" = "正向";
+"direction_negative" = "负向";
+"target_none" = "无";
+"target_mouse_move" = "鼠标移动";
+"add_mapping" = "添加映射";
+"done" = "完成";
+
+/* Profile Selector */
+"profiles_title" = "方案管理";
+"new_profile" = "新建方案";
+"reset_default" = "恢复默认";
+"duplicate" = "复制";
+"rename" = "重命名";
+"delete" = "删除";
+"profile_name_placeholder" = "方案名称";
+"cancel" = "取消";
+"create" = "创建";
+"save" = "保存";
+"rename_profile" = "重命名方案";
+"profile_name_default" = "默认";
+
+/* Permission Prompt */
+"permission_title" = "需要辅助功能权限";
+"permission_description" = "GamepadMapper 需要权限来控制你的键盘和鼠标。";
+"permission_step1" = "1. 点击下方按钮打开系统设置";
+"permission_step2" = "2. 在辅助功能列表中找到 GamepadMapper";
+"permission_step3" = "3. 开启开关";
+"open_system_settings" = "打开系统设置";
+"check_permission" = "检查权限";
+
+/* Debug View */
+"debug_title" = "调试信息";
+"debug_permission" = "辅助功能权限:";
+"debug_controller" = "手柄连接:";
+"debug_engine" = "引擎状态:";
+"debug_profile" = "当前方案:";
+"debug_entries" = "映射条目:";
+"debug_buttons" = "按键状态:";
+"debug_stick_l" = "左摇杆:";
+"debug_stick_r" = "右摇杆:";
+"debug_triggers" = "扳机:";
+"debug_dpad" = "方向键:";
+"open_accessibility_settings" = "打开辅助功能设置";
+
+/* Controller Elements */
+"dpad_up" = "方向键 上";
+"dpad_down" = "方向键 下";
+"dpad_left" = "方向键 左";
+"dpad_right" = "方向键 右";
+"button_a" = "A";
+"button_b" = "B";
+"button_x" = "X";
+"button_y" = "Y";
+"left_shoulder" = "LB";
+"right_shoulder" = "RB";
+"left_trigger" = "LT";
+"right_trigger" = "RT";
+"left_stick_x" = "左摇杆 X";
+"left_stick_y" = "左摇杆 Y";
+"right_stick_x" = "右摇杆 X";
+"right_stick_y" = "右摇杆 Y";
+"left_thumbstick_button" = "L3";
+"right_thumbstick_button" = "R3";
+
+/* Categories */
+"category_dpad" = "方向键";
+"category_face_buttons" = "功能键";
+"category_shoulder" = "肩键";
+"category_triggers" = "扳机";
+"category_left_stick" = "左摇杆";
+"category_right_stick" = "右摇杆";
+
+/* Mouse Buttons */
+"mouse_left" = "鼠标左键";
+"mouse_right" = "鼠标右键";
+"mouse_middle" = "鼠标中键";
+
+/* Permission States */
+"permission_granted" = "已授权";
+"permission_denied" = "未授权";
+"yes" = "是";
+"no" = "否";
+
+/* Language */
+"language_label" = "语言:";
+"language" = "语言";

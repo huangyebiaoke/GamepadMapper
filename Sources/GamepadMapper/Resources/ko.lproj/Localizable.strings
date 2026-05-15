@@ -1,0 +1,114 @@
+/* App Name */
+"app_name" = "GamepadMapper";
+
+/* Menu Bar */
+"menu_open_settings" = "설정 열기...";
+"menu_debug_info" = "디버그 정보...";
+"menu_start_mapping" = "매핑 시작";
+"menu_stop_mapping" = "매핑 중지";
+"menu_quit" = "GamepadMapper 종료";
+"menu_engine_log" = "엔진 로그";
+
+/* Content View */
+"no_controller" = "컨트롤러 없음";
+"unknown_controller" = "알 수 없는 컨트롤러";
+"profile_label" = "프로필:";
+"edit_mappings" = "매핑 편집";
+"profiles_button" = "프로필";
+"start_mapping" = "매핑 시작";
+"stop_mapping" = "매핑 중지";
+"active" = "실행 중";
+
+/* Controller Status */
+"left_stick" = "L스틱";
+"right_stick" = "R스틱";
+
+/* Mapping Editor */
+"edit_mappings_title" = "매핑 편집 — %@";
+"sensitivity_label" = "민감도: %d";
+"direction_positive" = "양수";
+"direction_negative" = "음수";
+"target_none" = "없음";
+"target_mouse_move" = "마우스 이동";
+"add_mapping" = "매핑 추가";
+"done" = "완료";
+
+/* Profile Selector */
+"profiles_title" = "프로필 관리";
+"new_profile" = "새 프로필";
+"reset_default" = "기본값으로 재설정";
+"duplicate" = "복제";
+"rename" = "이름 변경";
+"delete" = "삭제";
+"profile_name_placeholder" = "프로필 이름";
+"cancel" = "취소";
+"create" = "생성";
+"save" = "저장";
+"rename_profile" = "프로필 이름 변경";
+"profile_name_default" = "기본값";
+
+/* Permission Prompt */
+"permission_title" = "접근성 권한 필요";
+"permission_description" = "GamepadMapper가 키보드와 마우스를 제어하려면 권한이 필요합니다.";
+"permission_step1" = "1. 아래 버튼을 클릭하여 시스템 설정 열기";
+"permission_step2" = "2. 접근성 목록에서 GamepadMapper 찾기";
+"permission_step3" = "3. 스위치 켜기";
+"open_system_settings" = "시스템 설정 열기";
+"check_permission" = "권한 확인";
+
+/* Debug View */
+"debug_title" = "디버그 정보";
+"debug_permission" = "접근성 권한:";
+"debug_controller" = "컨트롤러 연결:";
+"debug_engine" = "엔진 상태:";
+"debug_profile" = "활성 프로필:";
+"debug_entries" = "매핑 항목:";
+"debug_buttons" = "버튼 상태:";
+"debug_stick_l" = "L스틱:";
+"debug_stick_r" = "R스틱:";
+"debug_triggers" = "트리거:";
+"debug_dpad" = "방향 패드:";
+"open_accessibility_settings" = "접근성 설정 열기";
+
+/* Controller Elements */
+"dpad_up" = "방향 패드 위";
+"dpad_down" = "방향 패드 아래";
+"dpad_left" = "방향 패드 왼쪽";
+"dpad_right" = "방향 패드 오른쪽";
+"button_a" = "A";
+"button_b" = "B";
+"button_x" = "X";
+"button_y" = "Y";
+"left_shoulder" = "LB";
+"right_shoulder" = "RB";
+"left_trigger" = "LT";
+"right_trigger" = "RT";
+"left_stick_x" = "L스틱 X";
+"left_stick_y" = "L스틱 Y";
+"right_stick_x" = "R스틱 X";
+"right_stick_y" = "R스틱 Y";
+"left_thumbstick_button" = "L3";
+"right_thumbstick_button" = "R3";
+
+/* Categories */
+"category_dpad" = "방향 패드";
+"category_face_buttons" = "액션 버튼";
+"category_shoulder" = "숄더";
+"category_triggers" = "트리거";
+"category_left_stick" = "L스틱";
+"category_right_stick" = "R스틱";
+
+/* Mouse Buttons */
+"mouse_left" = "마우스 왼쪽";
+"mouse_right" = "마우스 오른쪽";
+"mouse_middle" = "마우스 가운데";
+
+/* Permission States */
+"permission_granted" = "허용됨";
+"permission_denied" = "거부됨";
+"yes" = "예";
+"no" = "아니요";
+
+/* Language */
+"language_label" = "언어:";
+"language" = "언어";

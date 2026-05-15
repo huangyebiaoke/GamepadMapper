@@ -1,0 +1,114 @@
+/* App Name */
+"app_name" = "GamepadMapper";
+
+/* Menu Bar */
+"menu_open_settings" = "Abrir configuración...";
+"menu_debug_info" = "Información de depuración...";
+"menu_start_mapping" = "Iniciar mapeo";
+"menu_stop_mapping" = "Detener mapeo";
+"menu_quit" = "Salir de GamepadMapper";
+"menu_engine_log" = "Registro del motor";
+
+/* Content View */
+"no_controller" = "Sin controlador";
+"unknown_controller" = "Controlador desconocido";
+"profile_label" = "Perfil:";
+"edit_mappings" = "Editar mapeos";
+"profiles_button" = "Perfiles";
+"start_mapping" = "Iniciar mapeo";
+"stop_mapping" = "Detener mapeo";
+"active" = "Activo";
+
+/* Controller Status */
+"left_stick" = "Stick L";
+"right_stick" = "Stick R";
+
+/* Mapping Editor */
+"edit_mappings_title" = "Editar mapeos — %@";
+"sensitivity_label" = "Sensibilidad: %d";
+"direction_positive" = "Positivo";
+"direction_negative" = "Negativo";
+"target_none" = "Ninguno";
+"target_mouse_move" = "Movimiento del ratón";
+"add_mapping" = "Agregar mapeo";
+"done" = "Listo";
+
+/* Profile Selector */
+"profiles_title" = "Gestión de perfiles";
+"new_profile" = "Nuevo perfil";
+"reset_default" = "Restablecer predeterminado";
+"duplicate" = "Duplicar";
+"rename" = "Renombrar";
+"delete" = "Eliminar";
+"profile_name_placeholder" = "Nombre del perfil";
+"cancel" = "Cancelar";
+"create" = "Crear";
+"save" = "Guardar";
+"rename_profile" = "Renombrar perfil";
+"profile_name_default" = "Predeterminado";
+
+/* Permission Prompt */
+"permission_title" = "Se requiere permiso de accesibilidad";
+"permission_description" = "GamepadMapper necesita permiso para controlar el teclado y el ratón.";
+"permission_step1" = "1. Haz clic en el botón de abajo para abrir Configuración del sistema";
+"permission_step2" = "2. Busca GamepadMapper en la lista de Accesibilidad";
+"permission_step3" = "3. Activa el interruptor";
+"open_system_settings" = "Abrir Configuración del sistema";
+"check_permission" = "Verificar permiso";
+
+/* Debug View */
+"debug_title" = "Información de depuración";
+"debug_permission" = "Permiso de accesibilidad:";
+"debug_controller" = "Controlador conectado:";
+"debug_engine" = "Estado del motor:";
+"debug_profile" = "Perfil activo:";
+"debug_entries" = "Entradas del perfil:";
+"debug_buttons" = "Estado de botones:";
+"debug_stick_l" = "Stick L:";
+"debug_stick_r" = "Stick R:";
+"debug_triggers" = "Gatillos:";
+"debug_dpad" = "D-Pad:";
+"open_accessibility_settings" = "Abrir configuración de Accesibilidad";
+
+/* Controller Elements */
+"dpad_up" = "D-Pad Arriba";
+"dpad_down" = "D-Pad Abajo";
+"dpad_left" = "D-Pad Izquierda";
+"dpad_right" = "D-Pad Derecha";
+"button_a" = "A";
+"button_b" = "B";
+"button_x" = "X";
+"button_y" = "Y";
+"left_shoulder" = "LB";
+"right_shoulder" = "RB";
+"left_trigger" = "LT";
+"right_trigger" = "RT";
+"left_stick_x" = "Stick L X";
+"left_stick_y" = "Stick L Y";
+"right_stick_x" = "Stick R X";
+"right_stick_y" = "Stick R Y";
+"left_thumbstick_button" = "L3";
+"right_thumbstick_button" = "R3";
+
+/* Categories */
+"category_dpad" = "D-Pad";
+"category_face_buttons" = "Botones frontales";
+"category_shoulder" = "Bumpers";
+"category_triggers" = "Gatillos";
+"category_left_stick" = "Stick L";
+"category_right_stick" = "Stick R";
+
+/* Mouse Buttons */
+"mouse_left" = "Clic izquierdo";
+"mouse_right" = "Clic derecho";
+"mouse_middle" = "Clic central";
+
+/* Permission States */
+"permission_granted" = "CONCEDIDO";
+"permission_denied" = "DENEGADO";
+"yes" = "Sí";
+"no" = "No";
+
+/* Language */
+"language_label" = "Idioma:";
+"language" = "Idioma";
