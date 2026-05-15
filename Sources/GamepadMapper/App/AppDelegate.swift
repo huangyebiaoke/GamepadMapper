@@ -167,7 +167,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.center()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        window.level = .floating
         window.isReleasedWhenClosed = false
         settingsWindow = window
     }
@@ -195,7 +194,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.center()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        window.level = .floating
         window.isReleasedWhenClosed = false
 
         debugWindow = window
