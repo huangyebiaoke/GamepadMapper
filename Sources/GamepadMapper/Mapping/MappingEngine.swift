@@ -251,8 +251,8 @@ final class MappingEngine {
         case .mouseButton(let btn):
             processAnalogToMouseButtonLocked(value: value, button: btn, threshold: entry.analogThreshold)
 
-        case .mouseDrag:
-            break  // drag only applies to binary button inputs
+        case .mouseDrag(let btn):
+            processAnalogToMouseDragLocked(value: value, button: btn, threshold: entry.analogThreshold)
 
         case .mouseMove:
             processAnalogToMouseMoveLocked(value: value, entry: entry, sensitivity: sensitivity)
@@ -287,6 +287,21 @@ final class MappingEngine {
         if shouldPress && !isPressed {
             postMouseEvent(button: button, down: true)
         } else if !shouldPress && isPressed {
+            postMouseEvent(button: button, down: false)
+        }
+    }
+
+    // MARK: - Analog → Mouse Drag (lock must be held)
+
+    private func processAnalogToMouseDragLocked(value: Float, button: MouseButton, threshold: Float) {
+        let shouldPress = value > threshold
+        let isPressed = activeDragButtons.contains(button)
+
+        if shouldPress && !isPressed {
+            postMouseEvent(button: button, down: true)
+            activeDragButtons.insert(button)
+        } else if !shouldPress && isPressed {
+            activeDragButtons.remove(button)
             postMouseEvent(button: button, down: false)
         }
     }

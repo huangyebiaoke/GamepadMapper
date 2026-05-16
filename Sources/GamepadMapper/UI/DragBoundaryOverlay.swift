@@ -17,7 +17,7 @@ final class DragBoundaryOverlayWindow: NSPanel {
     private enum DragState {
         case idle
         case moving(offsetX: Double, offsetY: Double)
-        case resizing
+        case resizing(startDist: Double, startRadius: Double)
     }
 
     private var displayLink: CVDisplayLink?
@@ -232,7 +232,7 @@ final class DragBoundaryOverlayWindow: NSPanel {
         if dist > r + edgeThreshold { return }
 
         if abs(dist - r) < edgeThreshold {
-            dragState = .resizing
+            dragState = .resizing(startDist: Double(dist), startRadius: radius)
             circle.setMousePosition(circlePoint)
         } else {
             let sp = self.convertPoint(toScreen: event.locationInWindow)
@@ -254,14 +254,22 @@ final class DragBoundaryOverlayWindow: NSPanel {
                 y: sp.y - offY
             ))
             NSCursor.closedHand.set()
-        case .resizing:
-            let screenDist = distanceToCircleCenter(event: event)
-            let newRadius = max(20, min(300, screenDist))
+        case .resizing(let startDist, let startRadius):
+            // Use view-local distance (doesn't depend on window origin)
+            guard let cv = contentView, let circle = circleView else { return }
+            let viewPoint = cv.convert(event.locationInWindow, from: nil)
+            let circlePoint = circle.convert(viewPoint, from: cv)
+            let dx = Double(circlePoint.x - circle.bounds.midX)
+            let dy = Double(circlePoint.y - circle.bounds.midY)
+            let currentDist = sqrt(dx * dx + dy * dy)
+
+            let delta = currentDist - startDist
+            let newRadius = max(20, min(300, startRadius + delta))
             if abs(newRadius - radius) > 0.5 {
                 radius = newRadius
                 updateRadius(newRadius)
                 onRadiusChanged?(newRadius)
-                circleView?.setMousePosition(circleViewPoint(event: event))
+                circleView?.setMousePosition(circlePoint)
             }
         case .idle:
             break
@@ -276,21 +284,6 @@ final class DragBoundaryOverlayWindow: NSPanel {
             circleView?.setMousePosition(nil)
         }
         NSCursor.arrow.set()
-    }
-
-    private func distanceToCircleCenter(event: NSEvent) -> Double {
-        guard let screen = NSScreen.main else { return 0 }
-        let screenPoint = self.convertPoint(toScreen: event.locationInWindow)
-        let flippedY = screen.frame.height - screenPoint.y
-        let dx = screenPoint.x - circleCenter.x
-        let dy = flippedY - circleCenter.y
-        return sqrt(dx * dx + dy * dy)
-    }
-
-    private func circleViewPoint(event: NSEvent) -> CGPoint? {
-        guard let circle = circleView, let cv = contentView else { return nil }
-        let inCV = cv.convert(event.locationInWindow, from: nil)
-        return circle.convert(inCV, from: cv)
     }
 }
 
