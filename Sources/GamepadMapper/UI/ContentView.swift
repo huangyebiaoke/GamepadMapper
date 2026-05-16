@@ -7,8 +7,8 @@ struct ContentView: View {
     private let engine = MappingEngine.shared
     @Bindable private var languageManager = LanguageManager.shared
 
-    @State private var showMappingEditor = false
-    @State private var showProfileManager = false
+    @State private var editorWindow: NSWindow?
+    @State private var profileWindow: NSWindow?
 
     var body: some View {
         let _ = languageManager.currentLanguage // observe language changes
@@ -27,20 +27,6 @@ struct ContentView: View {
             // Only stop controller monitoring — engine runs independently on its
             // own background queue and must NOT be stopped when the window closes.
             controller.stopMonitoring()
-        }
-        .sheet(isPresented: $showMappingEditor) {
-            MappingEditorView(
-                profile: Binding(
-                    get: { profileManager.activeProfile ?? MappingProfile.defaultProfile() },
-                    set: {
-                        profileManager.saveProfile($0)
-                        MappingEngine.shared.refreshProfileCache()
-                    }
-                )
-            )
-        }
-        .sheet(isPresented: $showProfileManager) {
-            ProfileSelectorView(profileManager: profileManager)
         }
     }
 
@@ -93,11 +79,11 @@ struct ContentView: View {
             Spacer()
             languageSelector
             Button("edit_mappings".localized) {
-                showMappingEditor = true
+                openMappingEditor()
             }
             .controlSize(.regular)
             Button("profiles_button".localized) {
-                showProfileManager = true
+                openProfileManager()
             }
             .controlSize(.regular)
         }
@@ -139,5 +125,72 @@ struct ContentView: View {
             }
         }
         .padding(.bottom, 4)
+    }
+
+    // MARK: - Child Windows
+
+    private func openMappingEditor() {
+        if let window = editorWindow, window.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let editorView = MappingEditorView(
+            profile: Binding(
+                get: { profileManager.activeProfile ?? MappingProfile.defaultProfile() },
+                set: {
+                    profileManager.saveProfile($0)
+                    MappingEngine.shared.refreshProfileCache()
+                }
+            ),
+            onClose: { [editorWindow] in
+                editorWindow?.close()
+            }
+        )
+        let hostingView = NSHostingView(rootView: editorView)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 550, height: 500),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.title = String(format: "edit_mappings_title".localized,
+                              profileManager.activeProfile?.name ?? "")
+        window.center()
+        window.isReleasedWhenClosed = false
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        editorWindow = window
+    }
+
+    private func openProfileManager() {
+        if let window = profileWindow, window.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let profileView = ProfileSelectorView(
+            profileManager: profileManager,
+            onClose: { [profileWindow] in
+                profileWindow?.close()
+            }
+        )
+        let hostingView = NSHostingView(rootView: profileView)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 380),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.title = "profiles_title".localized
+        window.center()
+        window.isReleasedWhenClosed = false
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        profileWindow = window
     }
 }

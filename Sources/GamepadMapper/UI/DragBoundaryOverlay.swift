@@ -2,27 +2,32 @@ import AppKit
 import SwiftUI
 
 /// A borderless window with a translucent circle + crosshair.
-/// Drag the circle to position it over the game, then close to capture the center.
 final class DragBoundaryOverlayWindow: NSPanel {
-    /// Called continuously as the overlay is dragged (flipped screen coords).
     var onPositionChanged: ((CGPoint) -> Void)?
-    /// Called when the overlay is closed, passing the final center position.
     var onClose: ((CGPoint) -> Void)?
+    var onRadiusChanged: ((Double) -> Void)?
 
     private(set) var circleCenter: CGPoint = .zero
-    private var radius: Double
+    var radius: Double
 
     private var circleView: CircleOverlayView?
-    private var closeBtnTopConstraint: NSLayoutConstraint?
-    private var closeBtnTrailingConstraint: NSLayoutConstraint?
+    private var overlayContentView: NSView?
+
+    private var dragState: DragState = .idle
+    private enum DragState {
+        case idle
+        case moving(offsetX: Double, offsetY: Double)
+        case resizing
+    }
+
+    private var displayLink: CVDisplayLink?
 
     init(initialCenter: CGPoint, radius: Double) {
         self.radius = radius
         self.circleCenter = initialCenter
 
         let screenFrame = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        // Size the panel slightly larger than the circle so there's room for labels
-        let panelSize = max(radius * 2 + 60, 160)
+        let panelSize = max(radius * 2 + 80, 200)
         let panelRect = CGRect(x: 0, y: 0, width: panelSize, height: panelSize)
 
         super.init(
@@ -32,15 +37,14 @@ final class DragBoundaryOverlayWindow: NSPanel {
             defer: false
         )
 
-        self.level = .screenSaver
+        self.level = .floating
         self.backgroundColor = .clear
         self.isOpaque = false
         self.hasShadow = true
         self.collectionBehavior = [.canJoinAllSpaces, .transient]
-        self.isMovableByWindowBackground = true
         self.hidesOnDeactivate = false
+        self.acceptsMouseMovedEvents = true
 
-        // Position window so the circle center matches the desired screen coordinate
         let flippedY = screenFrame.height - initialCenter.y
         let origin = CGPoint(
             x: initialCenter.x - panelSize / 2,
@@ -48,13 +52,12 @@ final class DragBoundaryOverlayWindow: NSPanel {
         )
         self.setFrameOrigin(origin)
 
-        // Content view: transparent background
         let contentView = NSView(frame: panelRect)
         contentView.wantsLayer = true
         contentView.layer?.backgroundColor = NSColor.clear.cgColor
         self.contentView = contentView
+        self.overlayContentView = contentView
 
-        // Circle overlay centered in the content view
         let circle = CircleOverlayView(radius: radius)
         circle.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(circle)
@@ -65,7 +68,6 @@ final class DragBoundaryOverlayWindow: NSPanel {
             circle.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
         ])
 
-        // Close button at the top-right corner of the panel
         let closeBtn = NSButton(frame: .zero)
         closeBtn.bezelStyle = .accessoryBarAction
         closeBtn.title = ""
@@ -77,37 +79,83 @@ final class DragBoundaryOverlayWindow: NSPanel {
         closeBtn.action = #selector(closeOverlay)
         contentView.addSubview(closeBtn)
 
-        let topConstraint = closeBtn.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
-        let trailingConstraint = closeBtn.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
-        closeBtnTopConstraint = topConstraint
-        closeBtnTrailingConstraint = trailingConstraint
         NSLayoutConstraint.activate([
-            topConstraint,
-            trailingConstraint,
+            closeBtn.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+            closeBtn.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -4),
             closeBtn.widthAnchor.constraint(equalToConstant: 22),
             closeBtn.heightAnchor.constraint(equalToConstant: 22),
         ])
 
-        // Instruction label
-        let label = NSTextField(labelWithString: "拖动定位")
-        label.font = .systemFont(ofSize: 10, weight: .medium)
-        label.textColor = NSColor(white: 1, alpha: 0.7)
-        label.alignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(label)
+        // Display link for continuous cursor + visual updates (doesn't rely on tracking areas)
+        startDisplayLink()
+    }
 
-        NSLayoutConstraint.activate([
-            label.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
-            label.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
-        ])
+    deinit {
+        stopDisplayLink()
+    }
+
+    private func startDisplayLink() {
+        CVDisplayLinkCreateWithActiveCGDisplays(&displayLink)
+        guard let link = displayLink else { return }
+        let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, userInfo -> CVReturn in
+            guard let userInfo else { return kCVReturnSuccess }
+            let window = Unmanaged<DragBoundaryOverlayWindow>.fromOpaque(userInfo).takeUnretainedValue()
+            DispatchQueue.main.async { window.tick() }
+            return kCVReturnSuccess
+        }
+        CVDisplayLinkSetOutputCallback(link, callback, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
+        CVDisplayLinkStart(link)
+    }
+
+    private func stopDisplayLink() {
+        if let link = displayLink {
+            CVDisplayLinkStop(link)
+            displayLink = nil
+        }
+    }
+
+    /// Called at display refresh rate to update cursor and visuals from current mouse position.
+    private func tick() {
+        guard NSScreen.main != nil else { return }
+        let mousePos = NSEvent.mouseLocation
+        // Check if mouse is inside our window bounds
+        let windowScreenOrigin = self.frame.origin
+        let localX = mousePos.x - windowScreenOrigin.x
+        let localY = mousePos.y - windowScreenOrigin.y
+        guard let cv = contentView, let circle = circleView else { return }
+        // localX/localY are already in window-local coords (Y=0 at bottom = NSView coords)
+        let viewPoint = circle.convert(CGPoint(x: localX, y: localY), from: cv)
+
+        let ddx = Double(viewPoint.x - circle.bounds.midX)
+        let ddy = Double(viewPoint.y - circle.bounds.midY)
+        let dist = sqrt(ddx * ddx + ddy * ddy)
+        let r = radius
+        let edgeThreshold: Double = 10
+
+        if dist > r + edgeThreshold {
+            // Only reset cursor if we're not dragging
+            if case .idle = dragState {
+                NSCursor.arrow.set()
+                circle.setMousePosition(nil)
+            }
+        } else if abs(dist - r) < edgeThreshold {
+            if case .idle = dragState {
+                NSCursor.resizeUpDown.set()
+            }
+            circle.setMousePosition(viewPoint)
+        } else {
+            if case .idle = dragState {
+                NSCursor.openHand.set()
+            }
+            circle.setMousePosition(nil)
+        }
     }
 
     func updateRadius(_ newRadius: Double) {
         self.radius = newRadius
         circleView?.updateRadius(newRadius)
-        // Keep the current visual window center fixed on screen.
         let oldCenter = CGPoint(x: self.frame.midX, y: self.frame.midY)
-        let newPanelSize = max(newRadius * 2 + 60, 160)
+        let newPanelSize = max(newRadius * 2 + 80, 200)
         let newOrigin = CGPoint(
             x: oldCenter.x - newPanelSize / 2,
             y: oldCenter.y - newPanelSize / 2
@@ -128,7 +176,6 @@ final class DragBoundaryOverlayWindow: NSPanel {
             self.close()
             return
         }
-        // Calculate the actual screen center of this window
         let windowCenterInScreen = self.convertPoint(toScreen: CGPoint(
             x: self.frame.width / 2,
             y: self.frame.height / 2
@@ -140,7 +187,6 @@ final class DragBoundaryOverlayWindow: NSPanel {
         self.close()
     }
 
-    // Track window movement to update circleCenter continuously
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
         super.setFrame(frameRect, display: flag)
         if let screen = NSScreen.main {
@@ -154,9 +200,8 @@ final class DragBoundaryOverlayWindow: NSPanel {
         }
     }
 
-    // Close on Escape key
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { // Escape
+        if event.keyCode == 53 {
             captureAndClose()
         } else {
             super.keyDown(with: event)
@@ -165,46 +210,94 @@ final class DragBoundaryOverlayWindow: NSPanel {
 
     override var canBecomeKey: Bool { true }
 
-    // MARK: - Manual Dragging
-
-    private var isDragging = false
-    private var dragStartLocation: NSPoint = .zero
-    private var windowStartOrigin: NSPoint = .zero
+    // MARK: - Mouse events (handled by the panel, works after any setFrameOrigin)
 
     override func mouseDown(with event: NSEvent) {
-        // Start drag only on background (not on close button)
-        let location = event.locationInWindow
-        let hitView = contentView?.hitTest(
-            contentView?.convert(location, from: nil) ?? location
-        )
-        if hitView is NSButton {
+        guard let cv = contentView, let circle = circleView else { return }
+        let viewPoint = cv.convert(event.locationInWindow, from: nil)
+
+        // Check if hit the close button
+        if let hitView = cv.hitTest(viewPoint), hitView is NSButton {
             super.mouseDown(with: event)
             return
         }
-        isDragging = true
-        dragStartLocation = NSEvent.mouseLocation
-        windowStartOrigin = self.frame.origin
+
+        let circlePoint = circle.convert(viewPoint, from: cv)
+        let dx = circlePoint.x - circle.bounds.midX
+        let dy = circlePoint.y - circle.bounds.midY
+        let dist = sqrt(dx * dx + dy * dy)
+        let r = CGFloat(radius)
+        let edgeThreshold: CGFloat = 10
+
+        if dist > r + edgeThreshold { return }
+
+        if abs(dist - r) < edgeThreshold {
+            dragState = .resizing
+            circle.setMousePosition(circlePoint)
+        } else {
+            let sp = self.convertPoint(toScreen: event.locationInWindow)
+            dragState = .moving(
+                offsetX: sp.x - self.frame.origin.x,
+                offsetY: sp.y - self.frame.origin.y
+            )
+            circle.setMousePosition(nil)
+            NSCursor.closedHand.set()
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard isDragging else { return }
-        let current = NSEvent.mouseLocation
-        let dx = current.x - dragStartLocation.x
-        let dy = current.y - dragStartLocation.y
-        self.setFrameOrigin(NSPoint(
-            x: windowStartOrigin.x + dx,
-            y: windowStartOrigin.y + dy
-        ))
+        switch dragState {
+        case .moving(let offX, let offY):
+            let sp = self.convertPoint(toScreen: event.locationInWindow)
+            self.setFrameOrigin(CGPoint(
+                x: sp.x - offX,
+                y: sp.y - offY
+            ))
+            NSCursor.closedHand.set()
+        case .resizing:
+            let screenDist = distanceToCircleCenter(event: event)
+            let newRadius = max(20, min(300, screenDist))
+            if abs(newRadius - radius) > 0.5 {
+                radius = newRadius
+                updateRadius(newRadius)
+                onRadiusChanged?(newRadius)
+                circleView?.setMousePosition(circleViewPoint(event: event))
+            }
+        case .idle:
+            break
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
-        isDragging = false
+        let wasResizing: Bool
+        if case .resizing = dragState { wasResizing = true } else { wasResizing = false }
+        dragState = .idle
+        if wasResizing {
+            circleView?.setMousePosition(nil)
+        }
+        NSCursor.arrow.set()
+    }
+
+    private func distanceToCircleCenter(event: NSEvent) -> Double {
+        guard let screen = NSScreen.main else { return 0 }
+        let screenPoint = self.convertPoint(toScreen: event.locationInWindow)
+        let flippedY = screen.frame.height - screenPoint.y
+        let dx = screenPoint.x - circleCenter.x
+        let dy = flippedY - circleCenter.y
+        return sqrt(dx * dx + dy * dy)
+    }
+
+    private func circleViewPoint(event: NSEvent) -> CGPoint? {
+        guard let circle = circleView, let cv = contentView else { return nil }
+        let inCV = cv.convert(event.locationInWindow, from: nil)
+        return circle.convert(inCV, from: cv)
     }
 }
 
-/// Draws a translucent circle with crosshair and radius label.
+/// Draws the circle, crosshair, radius line with tick marks, and radius label.
 final class CircleOverlayView: NSView {
     private var radius: Double
+    private var mousePositionInView: CGPoint?
 
     init(radius: Double) {
         self.radius = radius
@@ -227,6 +320,11 @@ final class CircleOverlayView: NSView {
         self.superview?.needsLayout = true
     }
 
+    func setMousePosition(_ point: CGPoint?) {
+        mousePositionInView = point
+        self.needsDisplay = true
+    }
+
     override var isOpaque: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -234,15 +332,17 @@ final class CircleOverlayView: NSView {
         let cx = bounds.midX
         let cy = bounds.midY
 
-        // Outer glow
+        let blue = NSColor(cgColor: CGColor(red: 0.2, green: 0.65, blue: 1.0, alpha: 0.7))!
+        let blueBright = NSColor(cgColor: CGColor(red: 0.2, green: 0.65, blue: 1.0, alpha: 0.95))!
+        let blueDim = NSColor(cgColor: CGColor(red: 0.2, green: 0.55, blue: 1.0, alpha: 0.12))!
+
         let glow = NSBezierPath(ovalIn: CGRect(
             x: cx - r - 10, y: cy - r - 10,
             width: (r + 10) * 2, height: (r + 10) * 2
         ))
-        NSColor(cgColor: CGColor(red: 0.2, green: 0.55, blue: 1.0, alpha: 0.12))?.setFill()
+        blueDim.setFill()
         glow.fill()
 
-        // Main circle fill
         let circle = NSBezierPath(ovalIn: CGRect(
             x: cx - r, y: cy - r,
             width: r * 2, height: r * 2
@@ -250,43 +350,109 @@ final class CircleOverlayView: NSView {
         NSColor(cgColor: CGColor(red: 0.15, green: 0.5, blue: 1.0, alpha: 0.2))?.setFill()
         circle.fill()
 
-        // Circle stroke
-        let strokeColor = NSColor(cgColor: CGColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 0.85))!
-        strokeColor.setStroke()
+        blue.setStroke()
         circle.lineWidth = 2
         circle.stroke()
 
-        // Crosshair lines
         let chLen: CGFloat = 14
-        let chWidth: CGFloat = 1.5
-        let crosshairColor = NSColor(cgColor: CGColor(red: 0.2, green: 0.65, blue: 1.0, alpha: 0.7))!
-        crosshairColor.setStroke()
-
+        blue.setStroke()
         let hLine = NSBezierPath()
         hLine.move(to: CGPoint(x: cx - chLen, y: cy))
         hLine.line(to: CGPoint(x: cx + chLen, y: cy))
-        hLine.lineWidth = chWidth
+        hLine.lineWidth = 1.5
         hLine.stroke()
 
         let vLine = NSBezierPath()
         vLine.move(to: CGPoint(x: cx, y: cy - chLen))
         vLine.line(to: CGPoint(x: cx, y: cy + chLen))
-        vLine.lineWidth = chWidth
+        vLine.lineWidth = 1.5
         vLine.stroke()
 
-        // Center dot
         let dot = NSBezierPath(ovalIn: CGRect(x: cx - 3, y: cy - 3, width: 6, height: 6))
-        NSColor(cgColor: CGColor(red: 0.2, green: 0.65, blue: 1.0, alpha: 0.95))?.setFill()
+        blueBright.setFill()
         dot.fill()
 
-        // Radius label above circle
-        let label = "r=\(Int(radius))"
+        if let mousePos = mousePositionInView {
+            let dx = mousePos.x - cx
+            let dy = mousePos.y - cy
+            let dist = sqrt(dx * dx + dy * dy)
+            if dist > 5 {
+                drawRadiusLine(cx: cx, cy: cy, r: r, mousePos: mousePos, dist: dist)
+                drawRadiusLabel(cx: cx, cy: cy, mousePos: mousePos, dist: dist, r: r)
+            }
+        }
+    }
+
+    private func drawRadiusLine(cx: CGFloat, cy: CGFloat, r: CGFloat, mousePos: CGPoint, dist: CGFloat) {
+        let dx = mousePos.x - cx
+        let dy = mousePos.y - cy
+        let ux = dx / dist
+        let uy = dy / dist
+
+        let edgeX = cx + ux * r
+        let edgeY = cy + uy * r
+        let line = NSBezierPath()
+        line.move(to: CGPoint(x: cx, y: cy))
+        line.line(to: CGPoint(x: edgeX, y: edgeY))
+        NSColor(cgColor: CGColor(red: 0.2, green: 0.65, blue: 1.0, alpha: 0.5))?.setStroke()
+        line.lineWidth = 1.2
+        line.stroke()
+
+        let px = -uy
+        let py = ux
+        let tickColor = NSColor(cgColor: CGColor(red: 0.2, green: 0.65, blue: 1.0, alpha: 0.45))!
+        tickColor.setStroke()
+
+        let interval: CGFloat = 20
+        let majorInterval: CGFloat = 50
+        var d: CGFloat = interval
+        while d < r - 5 {
+            let isMajor = Int(round(d)) % Int(majorInterval) == 0
+            let halfLen = isMajor ? CGFloat(4) : CGFloat(2)
+
+            let tcx = cx + ux * d
+            let tcy = cy + uy * d
+
+            let tick = NSBezierPath()
+            tick.move(to: CGPoint(x: tcx + px * halfLen, y: tcy + py * halfLen))
+            tick.line(to: CGPoint(x: tcx - px * halfLen, y: tcy - py * halfLen))
+            tick.lineWidth = isMajor ? 1.2 : 0.8
+            tick.stroke()
+
+            d += interval
+        }
+    }
+
+    private func drawRadiusLabel(cx: CGFloat, cy: CGFloat, mousePos: CGPoint, dist: CGFloat, r: CGFloat) {
+        let dx = mousePos.x - cx
+        let dy = mousePos.y - cy
+        let ux = dx / dist
+        let uy = dy / dist
+
+        let labelX = cx + ux * r * 0.5
+        let labelY = cy + uy * r * 0.5
+
+        let label = "\(Int(radius))px"
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor(white: 1, alpha: 0.85),
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+            .foregroundColor: NSColor(white: 1, alpha: 0.9),
         ]
         let attrStr = NSAttributedString(string: label, attributes: attrs)
         let labelSize = attrStr.size()
-        attrStr.draw(at: CGPoint(x: cx - labelSize.width / 2, y: cy + r + 6))
+
+        let pillRect = CGRect(
+            x: labelX - labelSize.width / 2 - 6,
+            y: labelY - labelSize.height / 2 - 3,
+            width: labelSize.width + 12,
+            height: labelSize.height + 6
+        )
+        let pill = NSBezierPath(roundedRect: pillRect, xRadius: 4, yRadius: 4)
+        NSColor(cgColor: CGColor(red: 0.1, green: 0.1, blue: 0.15, alpha: 0.8))?.setFill()
+        pill.fill()
+
+        attrStr.draw(at: CGPoint(
+            x: labelX - labelSize.width / 2,
+            y: labelY - labelSize.height / 2
+        ))
     }
 }

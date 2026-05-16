@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ProfileSelectorView: View {
     let profileManager: ProfileManager
-    @Environment(\.dismiss) private var dismiss
+    var onClose: (() -> Void)?
     @State private var newProfileName = ""
     @State private var showNewProfileSheet = false
     @State private var editingProfile: MappingProfile?
@@ -66,7 +66,7 @@ struct ProfileSelectorView: View {
                 Spacer()
 
                 Button("done".localized) {
-                    dismiss()
+                    onClose?()
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)

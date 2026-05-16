@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MappingEditorView: View {
     @Binding var profile: MappingProfile
-    @Environment(\.dismiss) private var dismiss
+    var onClose: (() -> Void)?
     @State private var selectedEntry: MappingEntry?
     @State private var sensitivity: Float = 15.0
     @State private var boundaryEnabled = false
@@ -95,7 +95,7 @@ struct MappingEditorView: View {
                 Spacer()
 
                 Button("done".localized) {
-                    dismiss()
+                    onClose?()
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
@@ -233,6 +233,10 @@ struct MappingEditorView: View {
         let overlay = DragBoundaryOverlayWindow(initialCenter: initialCenter, radius: boundaryRadius)
         overlay.onPositionChanged = { center in
             boundaryCenterText = "(\(Int(center.x)), \(Int(center.y)))"
+        }
+        overlay.onRadiusChanged = { newRadius in
+            boundaryRadius = newRadius
+            updateBoundaryFromState()
         }
         overlay.onClose = { center in
             let flippedY = center.y
