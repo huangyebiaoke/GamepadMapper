@@ -36,10 +36,8 @@ final class DragBoundaryOverlayWindow: NSPanel {
         self.backgroundColor = .clear
         self.isOpaque = false
         self.hasShadow = true
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.isMovableByWindowBackground = true
-        self.hidesOnDeactivate = false
-        self.isFloatingPanel = true
 
         // Position window so the circle center matches the desired screen coordinate
         let flippedY = screenFrame.height - initialCenter.y
@@ -89,15 +87,11 @@ final class DragBoundaryOverlayWindow: NSPanel {
             closeBtn.heightAnchor.constraint(equalToConstant: 22),
         ])
 
-        // Instruction label (non-interactive so mouse events pass through for dragging)
+        // Instruction label
         let label = NSTextField(labelWithString: "拖动定位")
         label.font = .systemFont(ofSize: 10, weight: .medium)
         label.textColor = NSColor(white: 1, alpha: 0.7)
         label.alignment = .center
-        label.isSelectable = false
-        label.isEditable = false
-        label.isBezeled = false
-        label.drawsBackground = false
         label.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(label)
 
@@ -169,55 +163,6 @@ final class DragBoundaryOverlayWindow: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
-
-    // MARK: - Custom Dragging (isMovableByWindowBackground unreliable for borderless panels)
-
-    private var dragStartLocation: CGPoint?
-    private var windowStartOrigin: CGPoint?
-
-    override func mouseDown(with event: NSEvent) {
-        // Only start drag on the panel background, not on subviews like the close button.
-        let location = event.locationInWindow
-        if !contentViewHasHitTest(location) {
-            dragStartLocation = NSEvent.mouseLocation
-            windowStartOrigin = self.frame.origin
-        } else {
-            super.mouseDown(with: event)
-        }
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let startLocation = dragStartLocation, let startOrigin = windowStartOrigin else {
-            super.mouseDragged(with: event)
-            return
-        }
-        let currentLocation = NSEvent.mouseLocation
-        let delta = CGPoint(
-            x: currentLocation.x - startLocation.x,
-            y: currentLocation.y - startLocation.y
-        )
-        let newOrigin = CGPoint(
-            x: startOrigin.x + delta.x,
-            y: startOrigin.y + delta.y
-        )
-        self.setFrameOrigin(newOrigin)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        dragStartLocation = nil
-        windowStartOrigin = nil
-        super.mouseUp(with: event)
-    }
-
-    /// Returns true if the location hits an interactive button (close button).
-    /// Everything else (circle, label, background) should drag the window.
-    private func contentViewHasHitTest(_ location: CGPoint) -> Bool {
-        guard let cv = contentView else { return false }
-        let windowPoint = self.convertFromScreen(CGRect(origin: location, size: .zero)).origin
-        let viewPoint = cv.convert(windowPoint, from: nil)
-        let hitView = cv.hitTest(viewPoint)
-        return hitView is NSButton
-    }
 }
 
 /// Draws a translucent circle with crosshair and radius label.

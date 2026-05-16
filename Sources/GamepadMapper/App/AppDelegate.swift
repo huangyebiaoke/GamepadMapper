@@ -207,10 +207,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor
     @objc private func toggleMapping() {
         if engine.isActive {
-            // Close settings window before stopping engine.
-            // This triggers onDisappear → overlay.close(), preventing the
-            // overlay from keeping stale state while the engine shuts down.
-            closeAllWindows()
             engine.stop()
         } else {
             guard permissions.hasAccessibilityPermission else {
@@ -219,13 +215,5 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             engine.start()
         }
-    }
-
-    @MainActor
-    private func closeAllWindows() {
-        settingsWindow?.close()
-        settingsWindow = nil
-        debugWindow?.close()
-        debugWindow = nil
     }
 }
