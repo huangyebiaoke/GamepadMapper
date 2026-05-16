@@ -118,19 +118,56 @@ final class MappingEngine {
 
     private func stopOnQueue() {
         EngineLogger.log("STOP called")
-        lock.lock()
-        defer { lock.unlock() }
 
+        // Read mouse position BEFORE acquiring the lock.
+        // When trackedCursorPos is nil (set at line 126), releaseAllMouseButtonsLocked
+        // calls postMouseEvent which previously did DispatchQueue.main.sync to read
+        // NSEvent.mouseLocation. If the main thread is blocked on window close /
+        // onDisappear → stopMonitoring, that sync() deadlocks the main run loop.
+        let currentMousePos: CGPoint
+        if let mouseEvent = CGEvent(source: eventSource) {
+            currentMousePos = mouseEvent.location
+        } else {
+            currentMousePos = .zero
+        }
+
+        // Phase 1: collect state under lock.
+        lock.lock()
         pollTimer?.cancel()
         pollTimer = nil
         trackedCursorPos = nil
-        releaseAllKeysLocked()
-        releaseAllMouseButtonsLocked()
+
+        let keysToRelease = activeKeys
+        activeKeys.removeAll()
+        let mouseButtonsToRelease = activeMouseButtons
+        activeMouseButtons.removeAll()
+        let dragButtonsToRelease = activeDragButtons
+        activeDragButtons.removeAll()
         cachedEntries = []
 
         if let assertion = activityAssertion {
             ProcessInfo.processInfo.endActivity(assertion)
             activityAssertion = nil
+        }
+        lock.unlock()
+
+        // Phase 2: post release events OUTSIDE the lock.
+        // This prevents CGEvent.post latency and any main-thread access from
+        // blocking the lock and deadlocking stopOnQueue.
+        for keyCode in keysToRelease {
+            if let event = CGEvent(
+                keyboardEventSource: eventSource,
+                virtualKey: keyCode,
+                keyDown: false
+            ) {
+                event.post(tap: .cghidEventTap)
+            }
+        }
+        for button in mouseButtonsToRelease {
+            releaseMouseLocked(button: button, cursorPos: currentMousePos)
+        }
+        for button in dragButtonsToRelease {
+            releaseMouseLocked(button: button, cursorPos: currentMousePos)
         }
 
         Task { @MainActor in
@@ -138,6 +175,22 @@ final class MappingEngine {
             HIDGamepadReader.shared.stop()
             GameControllerManager.shared.stopMonitoring()
         }
+    }
+
+    /// Release a mouse button without holding the lock. Used only during shutdown.
+    private func releaseMouseLocked(button: MouseButton, cursorPos: CGPoint) {
+        let mouseType: CGEventType = switch button {
+        case .left: .leftMouseUp
+        case .right: .rightMouseUp
+        case .center: .otherMouseUp
+        }
+        guard let event = CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: mouseType,
+            mouseCursorPosition: cursorPos,
+            mouseButton: button.cgMouseButton
+        ) else { return }
+        event.post(tap: .cghidEventTap)
     }
 
     /// Call from main thread when the active profile changes.
@@ -250,11 +303,26 @@ final class MappingEngine {
         case .mouseButton(let btn):
             processAnalogToMouseButtonLocked(value: value, button: btn, threshold: entry.analogThreshold)
 
-        case .mouseDrag:
-            break  // drag only applies to binary button inputs
+        case .mouseDrag(let btn):
+            processAnalogToMouseDragLocked(value: value, button: btn, threshold: entry.analogThreshold)
 
         case .mouseMove:
             processAnalogToMouseMoveLocked(value: value, entry: entry, sensitivity: sensitivity)
+        }
+    }
+
+    // MARK: - Analog → Mouse Drag (lock must be held)
+
+    private func processAnalogToMouseDragLocked(value: Float, button: MouseButton, threshold: Float) {
+        let shouldDrag = value > threshold
+        let isDragging = activeDragButtons.contains(button)
+
+        if shouldDrag, !isDragging {
+            activeDragButtons.insert(button)
+            postMouseEvent(button: button, down: true)
+        } else if !shouldDrag, isDragging {
+            activeDragButtons.remove(button)
+            postMouseEvent(button: button, down: false)
         }
     }
 
@@ -393,15 +461,19 @@ final class MappingEngine {
         case (.center, false): mouseType = .otherMouseUp
         }
 
-        // Use tracked cursor position when available to avoid jumps between
-        // warp-based moves and button down/up events. Caller holds the lock.
+        // CRITICAL: Never touch the main thread here.
+        // postMouseEvent is called while `lock` is held (from poll → processButtonMappingLocked
+        // or stopOnQueue → releaseAllMouseButtonsLocked). If trackedCursorPos is nil and we
+        // do DispatchQueue.main.sync to read NSEvent.mouseLocation, but the main thread is
+        // blocked (e.g. in window close → onDisappear → stopMonitoring), DEADLOCK occurs.
+        // Use CGEvent(source:) as a fallback that reads cursor position from the event system.
         let mousePos: CGPoint
         if let tracked = trackedCursorPos {
             mousePos = tracked
+        } else if let mouseEvent = CGEvent(source: eventSource) {
+            mousePos = mouseEvent.location
         } else {
-            mousePos = DispatchQueue.main.sync {
-                NSEvent.mouseLocation.flipped
-            }
+            mousePos = .zero
         }
 
         guard let event = CGEvent(
@@ -434,10 +506,11 @@ final class MappingEngine {
         if let tracked = trackedCursorPos, !shouldSync {
             currentPos = tracked
         } else {
+            // Re-sync from CGEvent source — never sync to main thread while holding lock.
             if let mouseEvent = CGEvent(source: eventSource) {
                 currentPos = mouseEvent.location
             } else {
-                currentPos = DispatchQueue.main.sync { NSEvent.mouseLocation.flipped }
+                currentPos = trackedCursorPos ?? .zero
             }
             trackedCursorPos = currentPos
         }
@@ -521,32 +594,6 @@ final class MappingEngine {
         }
 
         EngineLogger.log("SNAP cursor to boundary center (\(Int(boundary.centerX)), \(Int(boundary.centerY)))")
-    }
-
-    // MARK: - Cleanup (lock must be held)
-
-    private func releaseAllKeysLocked() {
-        for keyCode in activeKeys {
-            if let event = CGEvent(
-                keyboardEventSource: eventSource,
-                virtualKey: keyCode,
-                keyDown: false
-            ) {
-                event.post(tap: .cghidEventTap)
-            }
-        }
-        activeKeys.removeAll()
-    }
-
-    private func releaseAllMouseButtonsLocked() {
-        for button in activeMouseButtons {
-            postMouseEvent(button: button, down: false)
-        }
-        activeMouseButtons.removeAll()
-        for button in activeDragButtons {
-            postMouseEvent(button: button, down: false)
-        }
-        activeDragButtons.removeAll()
     }
 
     // MARK: - NSPoint Extension

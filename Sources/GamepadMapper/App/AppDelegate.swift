@@ -207,9 +207,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor
     @objc private func toggleMapping() {
         if engine.isActive {
-            // Close all sub-windows before stopping the engine.
-            // This triggers onDisappear in SwiftUI views which closes any open
-            // overlay window, preventing a potential main-thread deadlock.
+            // Close settings window before stopping engine.
+            // This triggers onDisappear → overlay.close(), preventing the
+            // overlay from keeping stale state while the engine shuts down.
             closeAllWindows()
             engine.stop()
         } else {
