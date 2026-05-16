@@ -136,6 +136,16 @@ struct ContentView: View {
             return
         }
 
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 550, height: 500),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.center()
+        window.isReleasedWhenClosed = false
+        editorWindow = window
+
         let editorView = MappingEditorView(
             profile: Binding(
                 get: { profileManager.activeProfile ?? MappingProfile.defaultProfile() },
@@ -144,25 +154,15 @@ struct ContentView: View {
                     MappingEngine.shared.refreshProfileCache()
                 }
             ),
-            onClose: { [editorWindow] in
-                editorWindow?.close()
+            onClose: { [weak window] in
+                window?.close()
             }
         )
-        let hostingView = NSHostingView(rootView: editorView)
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 550, height: 500),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = hostingView
+        window.contentView = NSHostingView(rootView: editorView)
         window.title = String(format: "edit_mappings_title".localized,
                               profileManager.activeProfile?.name ?? "")
-        window.center()
-        window.isReleasedWhenClosed = false
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        editorWindow = window
     }
 
     private func openProfileManager() {
@@ -172,25 +172,25 @@ struct ContentView: View {
             return
         }
 
-        let profileView = ProfileSelectorView(
-            profileManager: profileManager,
-            onClose: { [profileWindow] in
-                profileWindow?.close()
-            }
-        )
-        let hostingView = NSHostingView(rootView: profileView)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 380),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.contentView = hostingView
-        window.title = "profiles_title".localized
         window.center()
         window.isReleasedWhenClosed = false
+        profileWindow = window
+
+        let profileView = ProfileSelectorView(
+            profileManager: profileManager,
+            onClose: { [weak window] in
+                window?.close()
+            }
+        )
+        window.contentView = NSHostingView(rootView: profileView)
+        window.title = "profiles_title".localized
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        profileWindow = window
     }
 }
