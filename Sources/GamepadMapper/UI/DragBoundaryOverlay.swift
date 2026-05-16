@@ -32,12 +32,13 @@ final class DragBoundaryOverlayWindow: NSPanel {
             defer: false
         )
 
-        self.level = .floating
+        self.level = .screenSaver
         self.backgroundColor = .clear
         self.isOpaque = false
         self.hasShadow = true
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        self.collectionBehavior = [.canJoinAllSpaces, .transient]
         self.isMovableByWindowBackground = true
+        self.hidesOnDeactivate = false
 
         // Position window so the circle center matches the desired screen coordinate
         let flippedY = screenFrame.height - initialCenter.y
@@ -163,6 +164,42 @@ final class DragBoundaryOverlayWindow: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
+
+    // MARK: - Manual Dragging
+
+    private var isDragging = false
+    private var dragStartLocation: NSPoint = .zero
+    private var windowStartOrigin: NSPoint = .zero
+
+    override func mouseDown(with event: NSEvent) {
+        // Start drag only on background (not on close button)
+        let location = event.locationInWindow
+        let hitView = contentView?.hitTest(
+            contentView?.convert(location, from: nil) ?? location
+        )
+        if hitView is NSButton {
+            super.mouseDown(with: event)
+            return
+        }
+        isDragging = true
+        dragStartLocation = NSEvent.mouseLocation
+        windowStartOrigin = self.frame.origin
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isDragging else { return }
+        let current = NSEvent.mouseLocation
+        let dx = current.x - dragStartLocation.x
+        let dy = current.y - dragStartLocation.y
+        self.setFrameOrigin(NSPoint(
+            x: windowStartOrigin.x + dx,
+            y: windowStartOrigin.y + dy
+        ))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        isDragging = false
+    }
 }
 
 /// Draws a translucent circle with crosshair and radius label.

@@ -45,6 +45,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.stopMonitoring()
     }
 
+    @MainActor
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Close all windows before terminating. Sub-windows with
+        // isReleasedWhenClosed = false prevent NSApp.terminate from completing.
+        settingsWindow?.close()
+        settingsWindow = nil
+        debugWindow?.close()
+        debugWindow = nil
+        return .terminateNow
+    }
+
     // MARK: - Menu Bar
 
     @MainActor
