@@ -111,11 +111,17 @@ final class HIDGamepadReader: @unchecked Sendable {
     }
 
     func stop() {
+        EngineLogger.log("HID: stop() called, waiting for lock...")
         lock.lock()
+        EngineLogger.log("HID: stop() lock acquired")
         defer { lock.unlock() }
-        guard isRunning else { return }
+        guard isRunning else {
+            EngineLogger.log("HID: stop() - not running, returning")
+            return
+        }
         isRunning = false
 
+        EngineLogger.log("HID: closing manager")
         if let mgr = manager {
             // Unschedule on whatever run loop it's on (the background thread's)
             IOHIDManagerClose(mgr, IOOptionBits(kIOHIDOptionsTypeNone))
@@ -127,15 +133,18 @@ final class HIDGamepadReader: @unchecked Sendable {
         hasIndividualDpadButtons = false
         deviceName = ""
         isConnected = false
+
+        EngineLogger.log("HID: syncing connection state")
         syncConnectionState(name: "", connected: false)
 
         // Stop the background thread's run loop
+        EngineLogger.log("HID: stopping run loop")
         if let rl = hidRunLoop {
             CFRunLoopStop(rl)
         }
         hidRunLoop = nil
         hidThread = nil
-        EngineLogger.log("HID: Manager closed, thread stopped")
+        EngineLogger.log("HID: stop() done")
     }
 
     func getState() -> State {

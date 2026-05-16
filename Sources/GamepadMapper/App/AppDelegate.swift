@@ -207,7 +207,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor
     @objc private func toggleMapping() {
         if engine.isActive {
+            EngineLogger.log("UI: toggleMapping - stopping engine")
             engine.stop()
+            EngineLogger.log("UI: toggleMapping - engine.stop() returned")
         } else {
             guard permissions.hasAccessibilityPermission else {
                 openSettings()

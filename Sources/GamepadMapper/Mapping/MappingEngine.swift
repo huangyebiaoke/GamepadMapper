@@ -111,33 +111,49 @@ final class MappingEngine {
     }
 
     func stop() {
+        EngineLogger.log("STOP: stop() called, dispatching to queue")
         queue.async { [weak self] in
             self?.stopOnQueue()
         }
+        EngineLogger.log("STOP: stop() returning")
     }
 
     private func stopOnQueue() {
-        EngineLogger.log("STOP called")
+        EngineLogger.log("STOP: entering stopOnQueue")
+        EngineLogger.log("STOP: waiting for lock...")
         lock.lock()
+        EngineLogger.log("STOP: lock acquired")
         defer { lock.unlock() }
 
+        EngineLogger.log("STOP: cancelling timer")
         pollTimer?.cancel()
         pollTimer = nil
         trackedCursorPos = nil
+
+        EngineLogger.log("STOP: releasing keys")
         releaseAllKeysLocked()
+        EngineLogger.log("STOP: releasing mouse buttons")
         releaseAllMouseButtonsLocked()
         cachedEntries = []
 
+        EngineLogger.log("STOP: ending activity assertion")
         if let assertion = activityAssertion {
             ProcessInfo.processInfo.endActivity(assertion)
             activityAssertion = nil
         }
 
+        EngineLogger.log("STOP: scheduling main actor cleanup")
         Task { @MainActor in
+            EngineLogger.log("STOP: main actor cleanup START")
             isActive = false
+            EngineLogger.log("STOP: isActive set to false")
             HIDGamepadReader.shared.stop()
+            EngineLogger.log("STOP: HIDGamepadReader stopped")
             GameControllerManager.shared.stopMonitoring()
+            EngineLogger.log("STOP: GameControllerManager stopped")
+            EngineLogger.log("STOP: main actor cleanup DONE")
         }
+        EngineLogger.log("STOP: stopOnQueue returning")
     }
 
     /// Call from main thread when the active profile changes.
