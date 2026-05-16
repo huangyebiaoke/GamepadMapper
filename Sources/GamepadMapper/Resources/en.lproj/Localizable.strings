@@ -32,6 +32,11 @@
 "target_mouse_move" = "Mouse Move";
 "add_mapping" = "Add Mapping";
 "done" = "Done";
+"drag_boundary_title" = "Drag Boundary";
+"drag_boundary_center" = "Center:";
+"drag_boundary_not_set" = "Not set";
+"drag_boundary_set_center" = "Show Overlay";
+"drag_boundary_radius" = "Radius: %d";
 
 /* Profile Selector */
 "profiles_title" = "Profiles";

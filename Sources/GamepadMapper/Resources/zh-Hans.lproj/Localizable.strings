@@ -32,6 +32,11 @@
 "target_mouse_move" = "鼠标移动";
 "add_mapping" = "添加映射";
 "done" = "完成";
+"drag_boundary_title" = "拖动限位";
+"drag_boundary_center" = "中心:";
+"drag_boundary_not_set" = "未设置";
+"drag_boundary_set_center" = "显示定位器";
+"drag_boundary_radius" = "半径: %d";
 
 /* Profile Selector */
 "profiles_title" = "方案管理";

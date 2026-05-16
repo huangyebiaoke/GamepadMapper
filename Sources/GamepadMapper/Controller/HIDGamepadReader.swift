@@ -38,8 +38,12 @@ final class HIDGamepadReader: @unchecked Sendable {
     private var hidRunLoop: CFRunLoop?
 
     /// Mapping from HID usage to state key path. Discovered per-device.
-    private var buttonMap: [(usage: UInt32, keyPath: WritableKeyPath<State, Float>)] = []
-    private var axisMap: [(usage: UInt32, keyPath: WritableKeyPath<State, Float>, min: Int32, max: Int32)] = []
+    /// Each entry stores (usagePage, usage) to prevent cross-page collisions.
+    private var buttonMap: [(usagePage: UInt32, usage: UInt32, keyPath: WritableKeyPath<State, Float>)] = []
+    private var axisMap: [(usagePage: UInt32, usage: UInt32, keyPath: WritableKeyPath<State, Float>, min: Int32, max: Int32)] = []
+    /// True if the controller has individual D-pad buttons mapped (usage 11-14 on Button page).
+    /// When true, the hat switch is ignored because its transitional values conflict with button state.
+    private var hasIndividualDpadButtons = false
 
     private init() {}
 
@@ -120,6 +124,7 @@ final class HIDGamepadReader: @unchecked Sendable {
         _state = State()
         buttonMap = []
         axisMap = []
+        hasIndividualDpadButtons = false
         deviceName = ""
         isConnected = false
         syncConnectionState(name: "", connected: false)
@@ -196,6 +201,7 @@ final class HIDGamepadReader: @unchecked Sendable {
         EngineLogger.log("HID: Device removed: \(name)")
         buttonMap = []
         axisMap = []
+        hasIndividualDpadButtons = false
         _state = State()
         syncConnectionState(name: "", connected: false)
     }
@@ -224,54 +230,54 @@ final class HIDGamepadReader: @unchecked Sendable {
         // Generic Desktop - Stick axes
         case (UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_X)):
             if axisMap.first(where: { $0.keyPath == \State.leftStickX }) == nil {
-                axisMap.append((usage, \State.leftStickX, logMin, logMax))
+                axisMap.append((usagePage, usage, \State.leftStickX, logMin, logMax))
             } else {
-                axisMap.append((usage, \State.rightStickX, logMin, logMax))
+                axisMap.append((usagePage, usage, \State.rightStickX, logMin, logMax))
             }
         case (UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Y)):
             if axisMap.first(where: { $0.keyPath == \State.leftStickY }) == nil {
-                axisMap.append((usage, \State.leftStickY, logMin, logMax))
+                axisMap.append((usagePage, usage, \State.leftStickY, logMin, logMax))
             } else {
-                axisMap.append((usage, \State.rightStickY, logMin, logMax))
+                axisMap.append((usagePage, usage, \State.rightStickY, logMin, logMax))
             }
         case (UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Rx)):
-            axisMap.append((usage, \State.rightStickX, logMin, logMax))
+            axisMap.append((usagePage, usage, \State.rightStickX, logMin, logMax))
         case (UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Ry)):
-            axisMap.append((usage, \State.rightStickY, logMin, logMax))
+            axisMap.append((usagePage, usage, \State.rightStickY, logMin, logMax))
         case (UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Z)):
-            axisMap.append((usage, \State.leftTrigger, logMin, logMax))
+            axisMap.append((usagePage, usage, \State.leftTrigger, logMin, logMax))
         case (UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Rz)):
-            axisMap.append((usage, \State.rightTrigger, logMin, logMax))
+            axisMap.append((usagePage, usage, \State.rightTrigger, logMin, logMax))
 
         // Button page - standard gamepad buttons
         case (UInt32(kHIDPage_Button), 1):
-            buttonMap.append((usage, \State.buttonA))
+            buttonMap.append((usagePage, usage, \State.buttonA))
         case (UInt32(kHIDPage_Button), 2):
-            buttonMap.append((usage, \State.buttonB))
+            buttonMap.append((usagePage, usage, \State.buttonB))
         case (UInt32(kHIDPage_Button), 3):
-            buttonMap.append((usage, \State.buttonX))
+            buttonMap.append((usagePage, usage, \State.buttonX))
         case (UInt32(kHIDPage_Button), 4):
-            buttonMap.append((usage, \State.buttonY))
+            buttonMap.append((usagePage, usage, \State.buttonY))
         case (UInt32(kHIDPage_Button), 5):
-            buttonMap.append((usage, \State.leftShoulder))
+            buttonMap.append((usagePage, usage, \State.leftShoulder))
         case (UInt32(kHIDPage_Button), 6):
-            buttonMap.append((usage, \State.rightShoulder))
+            buttonMap.append((usagePage, usage, \State.rightShoulder))
         case (UInt32(kHIDPage_Button), 7):
-            buttonMap.append((usage, \State.leftTrigger))
+            buttonMap.append((usagePage, usage, \State.leftTrigger))
         case (UInt32(kHIDPage_Button), 8):
-            buttonMap.append((usage, \State.rightTrigger))
+            buttonMap.append((usagePage, usage, \State.rightTrigger))
         case (UInt32(kHIDPage_Button), 9):
-            buttonMap.append((usage, \State.leftThumbstickButton))
+            buttonMap.append((usagePage, usage, \State.leftThumbstickButton))
         case (UInt32(kHIDPage_Button), 10):
-            buttonMap.append((usage, \State.rightThumbstickButton))
+            buttonMap.append((usagePage, usage, \State.rightThumbstickButton))
         case (UInt32(kHIDPage_Button), 11):
-            buttonMap.append((usage, \State.dpadUp))
+            buttonMap.append((usagePage, usage, \State.dpadUp)); hasIndividualDpadButtons = true
         case (UInt32(kHIDPage_Button), 12):
-            buttonMap.append((usage, \State.dpadDown))
+            buttonMap.append((usagePage, usage, \State.dpadDown)); hasIndividualDpadButtons = true
         case (UInt32(kHIDPage_Button), 13):
-            buttonMap.append((usage, \State.dpadLeft))
+            buttonMap.append((usagePage, usage, \State.dpadLeft)); hasIndividualDpadButtons = true
         case (UInt32(kHIDPage_Button), 14):
-            buttonMap.append((usage, \State.dpadRight))
+            buttonMap.append((usagePage, usage, \State.dpadRight)); hasIndividualDpadButtons = true
 
         default:
             break
@@ -289,14 +295,14 @@ final class HIDGamepadReader: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        // Check button map
-        if let mapping = buttonMap.first(where: { $0.usage == usage }) {
+        // Check button map (must match both usagePage AND usage)
+        if let mapping = buttonMap.first(where: { $0.usagePage == usagePage && $0.usage == usage }) {
             _state[keyPath: mapping.keyPath] = intValue > 0 ? 1.0 : 0.0
             return
         }
 
-        // Check axis map
-        if let mapping = axisMap.first(where: { $0.usage == usage }) {
+        // Check axis map (must match both usagePage AND usage)
+        if let mapping = axisMap.first(where: { $0.usagePage == usagePage && $0.usage == usage }) {
             let range = Float(mapping.max - mapping.min)
             let normalized = range > 0 ? (Float(Int32(intValue) - mapping.min) / range) * 2.0 - 1.0 : 0.0
             _state[keyPath: mapping.keyPath] = normalized
@@ -304,25 +310,33 @@ final class HIDGamepadReader: @unchecked Sendable {
         }
 
         // Handle hat switch (D-pad)
+        // Standard HID hat values: 1=N, 2=NE, 3=E, 4=SE, 5=S, 6=SW, 7=W, 8=NW, 0=neutral
+        // Each direction can be combined (diagonals set two axes at once).
         if usagePage == UInt32(kHIDPage_GenericDesktop) && usage == UInt32(kHIDUsage_GD_Hatswitch) {
-            // Hat switch: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW, 8=neutral
-            // Diagonals snap to the NEAREST cardinal direction (vertical priority).
-            // This avoids the original "db" bug where SW=5 fired BOTH Down+Left keys.
+            if hasIndividualDpadButtons {
+                return
+            }
+            // Reset all, then set the active directions
+            _state.dpadUp = 0.0; _state.dpadDown = 0.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
             switch intValue {
-            case 0: // N
-                _state.dpadUp = 1.0; _state.dpadDown = 0.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
-            case 1, 7: // NE, NW → Up
-                _state.dpadUp = 1.0; _state.dpadDown = 0.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
-            case 2: // E
-                _state.dpadUp = 0.0; _state.dpadDown = 0.0; _state.dpadLeft = 0.0; _state.dpadRight = 1.0
-            case 3, 5: // SE, SW → Down
-                _state.dpadUp = 0.0; _state.dpadDown = 1.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
-            case 4: // S
-                _state.dpadUp = 0.0; _state.dpadDown = 1.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
-            case 6: // W
-                _state.dpadUp = 0.0; _state.dpadDown = 0.0; _state.dpadLeft = 1.0; _state.dpadRight = 0.0
-            default: // 8 or anything else = neutral
-                _state.dpadUp = 0.0; _state.dpadDown = 0.0; _state.dpadLeft = 0.0; _state.dpadRight = 0.0
+            case 1: // N
+                _state.dpadUp = 1.0
+            case 2: // NE
+                _state.dpadUp = 1.0; _state.dpadRight = 1.0
+            case 3: // E
+                _state.dpadRight = 1.0
+            case 4: // SE
+                _state.dpadDown = 1.0; _state.dpadRight = 1.0
+            case 5: // S
+                _state.dpadDown = 1.0
+            case 6: // SW
+                _state.dpadDown = 1.0; _state.dpadLeft = 1.0
+            case 7: // W
+                _state.dpadLeft = 1.0
+            case 8: // NW
+                _state.dpadUp = 1.0; _state.dpadLeft = 1.0
+            default: // 0 or unknown → neutral, all cleared above
+                break
             }
         }
     }

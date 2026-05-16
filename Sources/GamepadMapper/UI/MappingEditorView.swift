@@ -5,6 +5,10 @@ struct MappingEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedEntry: MappingEntry?
     @State private var sensitivity: Float = 15.0
+    @State private var boundaryEnabled = false
+    @State private var boundaryRadius: Double = 100
+    @State private var boundaryCenterText = ""
+    @State private var overlayWindow: DragBoundaryOverlayWindow?
     @Bindable private var languageManager = LanguageManager.shared
 
     var body: some View {
@@ -22,6 +26,46 @@ struct MappingEditorView: View {
                     .onChange(of: sensitivity) {
                         profile.mouseSensitivity = Double(sensitivity)
                     }
+            }
+            .padding(.horizontal)
+
+            // Drag Boundary Section
+            VStack(spacing: 8) {
+                HStack {
+                    Toggle("drag_boundary_title".localized, isOn: $boundaryEnabled)
+                        .font(.subheadline)
+                        .onChange(of: boundaryEnabled) {
+                            updateBoundaryFromState()
+                        }
+                    Spacer()
+                }
+
+                if boundaryEnabled {
+                    HStack {
+                        Text("drag_boundary_center".localized)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(boundaryCenterText)
+                            .font(.caption)
+                            .monospaced()
+                        Spacer()
+                        Button("drag_boundary_set_center".localized) {
+                            showOverlay()
+                        }
+                        .controlSize(.small)
+                    }
+
+                    HStack {
+                        Text(String(format: "drag_boundary_radius".localized, Int(boundaryRadius)))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Slider(value: $boundaryRadius, in: 20...300, step: 10)
+                            .onChange(of: boundaryRadius) {
+                                updateBoundaryFromState()
+                                overlayWindow?.updateRadius(boundaryRadius)
+                            }
+                    }
+                }
             }
             .padding(.horizontal)
 
@@ -61,6 +105,18 @@ struct MappingEditorView: View {
         .frame(minWidth: 500, minHeight: 400)
         .onAppear {
             sensitivity = Float(profile.mouseSensitivity)
+            if let b = profile.dragBoundary {
+                boundaryEnabled = true
+                boundaryRadius = b.radius
+                boundaryCenterText = "(\(Int(b.centerX)), \(Int(b.centerY)))"
+            } else {
+                boundaryEnabled = false
+                boundaryCenterText = "drag_boundary_not_set".localized
+            }
+        }
+        .onDisappear {
+            overlayWindow?.close()
+            overlayWindow = nil
         }
     }
 
@@ -159,5 +215,55 @@ struct MappingEditorView: View {
 
     private func removeMapping(_ entry: MappingEntry) {
         profile.entries.removeAll { $0.id == entry.id }
+    }
+
+    private func showOverlay() {
+        // Close any existing overlay first
+        overlayWindow?.close()
+
+        let initialCenter: CGPoint
+        if let existing = profile.dragBoundary {
+            initialCenter = CGPoint(x: existing.centerX, y: existing.centerY)
+        } else {
+            // Default to center of screen
+            let screen = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+            initialCenter = CGPoint(x: screen.width / 2, y: screen.height / 2)
+        }
+
+        let overlay = DragBoundaryOverlayWindow(initialCenter: initialCenter, radius: boundaryRadius)
+        overlay.onPositionChanged = { center in
+            boundaryCenterText = "(\(Int(center.x)), \(Int(center.y)))"
+        }
+        overlay.onClose = { center in
+            let flippedY = center.y
+            if profile.dragBoundary == nil {
+                profile.dragBoundary = DragBoundary(centerX: center.x, centerY: flippedY, radius: boundaryRadius)
+            } else {
+                profile.dragBoundary?.centerX = center.x
+                profile.dragBoundary?.centerY = flippedY
+                profile.dragBoundary?.radius = boundaryRadius
+            }
+            boundaryCenterText = "(\(Int(center.x)), \(Int(center.y)))"
+            overlayWindow = nil
+        }
+        overlayWindow = overlay
+        overlay.makeKeyAndOrderFront(nil)
+    }
+
+    private func updateBoundaryFromState() {
+        if boundaryEnabled {
+            if let existing = profile.dragBoundary {
+                profile.dragBoundary = DragBoundary(
+                    centerX: existing.centerX,
+                    centerY: existing.centerY,
+                    radius: boundaryRadius
+                )
+            } else {
+                // Not yet set — show placeholder
+                boundaryCenterText = "drag_boundary_not_set".localized
+            }
+        } else {
+            profile.dragBoundary = nil
+        }
     }
 }

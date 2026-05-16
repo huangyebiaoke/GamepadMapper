@@ -18,6 +18,7 @@ final class MappingEngine {
     /// Cached profile entries for background polling. Updated from main thread.
     private var cachedEntries: [MappingEntry] = []
     private var cachedSensitivity: Float = 15.0
+    private var cachedBoundary: DragBoundary?
 
     private let eventSource: CGEventSource
 
@@ -38,6 +39,10 @@ final class MappingEngine {
     private var trackedCursorPos: CGPoint?
     /// Frame counter for periodic cursor re-sync.
     private var frameCount: Int = 0
+    /// Whether any analog → mouseMove delta was produced this poll frame.
+    private var stickMovedThisFrame: Bool = false
+    /// Whether we already snapped cursor to boundary center during the current drag session.
+    private var hasSnappedToCenter: Bool = false
 
     private init() {
         self.eventSource = CGEventSource(stateID: .privateState)!
@@ -56,14 +61,15 @@ final class MappingEngine {
             let pm = ProfileManager.shared
             let entries = pm.activeProfile?.entries ?? []
             let sensitivity = Float(pm.activeProfile?.mouseSensitivity ?? 15.0)
+            let boundary = pm.activeProfile?.dragBoundary
 
             queue.async { [weak self] in
-                self?.startOnQueue(entries: entries, sensitivity: sensitivity)
+                self?.startOnQueue(entries: entries, sensitivity: sensitivity, boundary: boundary)
             }
         }
     }
 
-    private func startOnQueue(entries: [MappingEntry], sensitivity: Float) {
+    private func startOnQueue(entries: [MappingEntry], sensitivity: Float, boundary: DragBoundary?) {
         lock.lock()
         defer { lock.unlock() }
 
@@ -71,6 +77,7 @@ final class MappingEngine {
 
         cachedEntries = entries
         cachedSensitivity = sensitivity
+        cachedBoundary = boundary
 
         let startMsg = "startOnQueue: entries=\(entries.count)"
         EngineLogger.clear()
@@ -139,11 +146,13 @@ final class MappingEngine {
         let pm = ProfileManager.shared
         let entries = pm.activeProfile?.entries ?? []
         let sensitivity = Float(pm.activeProfile?.mouseSensitivity ?? 15.0)
+        let boundary = pm.activeProfile?.dragBoundary
         queue.async { [weak self] in
             self?.lock.lock()
             defer { self?.lock.unlock() }
             self?.cachedEntries = entries
             self?.cachedSensitivity = sensitivity
+            self?.cachedBoundary = boundary
         }
     }
 
@@ -159,6 +168,9 @@ final class MappingEngine {
         let hid = HIDGamepadReader.shared
         let sensitivity = cachedSensitivity
         let entries = cachedEntries
+        let boundary = cachedBoundary
+
+        stickMovedThisFrame = false
 
         for entry in entries {
             let value = hid.value(for: entry.source)
@@ -167,6 +179,22 @@ final class MappingEngine {
             } else {
                 processButtonMappingLocked(value: value, entry: entry)
             }
+        }
+
+        // Snap-to-center: if drag is active but stick is neutral, warp cursor
+        // back to the boundary center so the next direction starts from center.
+        let isDragging = !activeDragButtons.isEmpty
+        if isDragging {
+            if !stickMovedThisFrame {
+                if !hasSnappedToCenter, let boundary = boundary {
+                    snapCursorToBoundaryCenter(boundary)
+                    hasSnappedToCenter = true
+                }
+            } else {
+                hasSnappedToCenter = false
+            }
+        } else {
+            hasSnappedToCenter = false
         }
     }
 
@@ -291,6 +319,7 @@ final class MappingEngine {
         }
 
         if deltaX != 0 || deltaY != 0 {
+            stickMovedThisFrame = true
             postMouseMove(deltaX: deltaX, deltaY: deltaY)
         }
     }
@@ -421,6 +450,27 @@ final class MappingEngine {
         CGWarpMouseCursorPosition(newPos)
         trackedCursorPos = newPos
 
+        // Clamp to drag boundary when dragging.
+        let clampedPos: CGPoint
+        if !activeDragButtons.isEmpty, let boundary = cachedBoundary {
+            let dx = newPos.x - boundary.centerX
+            let dy = newPos.y - boundary.centerY
+            let dist = sqrt(dx * dx + dy * dy)
+            if dist > boundary.radius {
+                let scale = boundary.radius / dist
+                clampedPos = CGPoint(
+                    x: boundary.centerX + dx * scale,
+                    y: boundary.centerY + dy * scale
+                )
+                CGWarpMouseCursorPosition(clampedPos)
+                trackedCursorPos = clampedPos
+            } else {
+                clampedPos = newPos
+            }
+        } else {
+            clampedPos = newPos
+        }
+
         // If a drag button is held, post a drag event instead of a plain move.
         let dragBtn = activeDragButtons.first
         let eventType: CGEventType
@@ -434,13 +484,43 @@ final class MappingEngine {
         if let event = CGEvent(
             mouseEventSource: eventSource,
             mouseType: eventType,
-            mouseCursorPosition: newPos,
+            mouseCursorPosition: clampedPos,
             mouseButton: dragBtn?.cgMouseButton ?? .left
         ) {
             event.setIntegerValueField(.mouseEventDeltaX, value: Int64(deltaX))
             event.setIntegerValueField(.mouseEventDeltaY, value: Int64(deltaY))
             event.post(tap: .cghidEventTap)
         }
+    }
+
+    // MARK: - Drag Boundary (lock must be held)
+
+    private func snapCursorToBoundaryCenter(_ boundary: DragBoundary) {
+        let center = CGPoint(x: boundary.centerX, y: boundary.centerY)
+        CGWarpMouseCursorPosition(center)
+        trackedCursorPos = center
+
+        let dragBtn = activeDragButtons.first
+        let eventType: CGEventType
+        switch dragBtn {
+        case .left: eventType = .leftMouseDragged
+        case .right: eventType = .rightMouseDragged
+        case .center: eventType = .otherMouseDragged
+        case nil: eventType = .mouseMoved
+        }
+
+        if let event = CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: eventType,
+            mouseCursorPosition: center,
+            mouseButton: dragBtn?.cgMouseButton ?? .left
+        ) {
+            event.setIntegerValueField(.mouseEventDeltaX, value: 0)
+            event.setIntegerValueField(.mouseEventDeltaY, value: 0)
+            event.post(tap: .cghidEventTap)
+        }
+
+        EngineLogger.log("SNAP cursor to boundary center (\(Int(boundary.centerX)), \(Int(boundary.centerY)))")
     }
 
     // MARK: - Cleanup (lock must be held)
@@ -468,9 +548,10 @@ final class MappingEngine {
         }
         activeDragButtons.removeAll()
     }
-}
 
-// MARK: - NSPoint Extension
+    // MARK: - NSPoint Extension
+
+}
 
 private extension NSPoint {
     var flipped: CGPoint {

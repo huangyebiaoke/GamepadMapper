@@ -157,6 +157,18 @@ enum AnalogDirection: String, Codable, Hashable {
     case negative
 }
 
+// MARK: - Drag Boundary
+
+struct DragBoundary: Codable, Equatable {
+    var centerX: Double
+    var centerY: Double
+    var radius: Double
+
+    static func == (lhs: DragBoundary, rhs: DragBoundary) -> Bool {
+        lhs.centerX == rhs.centerX && lhs.centerY == rhs.centerY && lhs.radius == rhs.radius
+    }
+}
+
 // MARK: - Mapping Entry
 
 struct MappingEntry: Codable, Equatable, Identifiable {
@@ -179,6 +191,7 @@ struct MappingProfile: Codable, Identifiable {
     var name: String
     var entries: [MappingEntry]
     var mouseSensitivity: Double = 15.0
+    var dragBoundary: DragBoundary?
     var createdAt: Date
     var updatedAt: Date
 
