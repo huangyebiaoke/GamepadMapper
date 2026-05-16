@@ -10,7 +10,6 @@ struct MappingEditorView: View {
     @State private var boundaryCenterText = ""
     @State private var overlayWindow: DragBoundaryOverlayWindow?
     @Bindable private var languageManager = LanguageManager.shared
-    @Bindable private var engine = MappingEngine.shared
 
     var body: some View {
         let _ = languageManager.currentLanguage
@@ -118,13 +117,6 @@ struct MappingEditorView: View {
         .onDisappear {
             overlayWindow?.close()
             overlayWindow = nil
-        }
-        .onChange(of: engine.isActive) { _, isActive in
-            // Auto-close overlay when engine stops to prevent stale state / hangs.
-            if !isActive, overlayWindow != nil {
-                overlayWindow?.close()
-                overlayWindow = nil
-            }
         }
     }
 
