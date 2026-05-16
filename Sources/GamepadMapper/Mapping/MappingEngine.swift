@@ -44,6 +44,16 @@ final class MappingEngine {
     /// Whether we already snapped cursor to boundary center during the current drag session.
     private var hasSnappedToCenter: Bool = false
 
+    /// Actions to perform after releasing the lock.
+    private enum OutputAction {
+        case keyDown(CGKeyCode)
+        case keyUp(CGKeyCode)
+        case mouseDown(MouseButton, cursorPos: CGPoint)
+        case mouseUp(MouseButton, cursorPos: CGPoint)
+        case mouseMove(Float, Float)
+        case warpCursor(CGPoint)
+    }
+
     private init() {
         self.eventSource = CGEventSource(stateID: .privateState)!
     }
@@ -51,11 +61,9 @@ final class MappingEngine {
     // MARK: - Start / Stop
 
     func start() {
-        // Grab state from main-thread singletons, then start on background queue.
         Task { @MainActor in
             let hid = HIDGamepadReader.shared
             hid.start()
-            // Keep GameControllerManager for UI status display
             GameControllerManager.shared.startMonitoring()
 
             let pm = ProfileManager.shared
@@ -79,26 +87,18 @@ final class MappingEngine {
         cachedSensitivity = sensitivity
         cachedBoundary = boundary
 
-        let startMsg = "startOnQueue: entries=\(entries.count)"
         EngineLogger.clear()
-        EngineLogger.log(startMsg)
+        EngineLogger.log("startOnQueue: entries=\(entries.count)")
 
-        // Prevent App Nap
         activityAssertion = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiated, .latencyCritical],
             reason: "Gamepad polling requires real-time response"
         )
 
-        // DispatchSourceTimer fires on this background queue — no main actor hop needed.
         let timer = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
         timer.schedule(deadline: .now(), repeating: .milliseconds(8), leeway: .nanoseconds(0))
-
-        var pollCount = 0
         timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            pollCount += 1
-
-            self.poll()
+            self?.poll()
         }
         timer.resume()
         pollTimer = timer
@@ -107,7 +107,7 @@ final class MappingEngine {
             isActive = true
         }
 
-        NSLog("[MappingEngine] Started on background queue. Entries: \(entries.count)")
+        NSLog("[MappingEngine] Started. Entries: \(entries.count)")
     }
 
     func stop() {
@@ -119,9 +119,6 @@ final class MappingEngine {
     private func stopOnQueue() {
         EngineLogger.log("STOP called")
 
-        // Read mouse position BEFORE acquiring the lock to avoid deadlock:
-        // stopOnQueue holds lock → releaseAllMouseButtonsLocked → postMouseEvent
-        // → DispatchQueue.main.sync — if main thread is blocked on status bar menu, deadlock.
         let currentMousePos: CGPoint
         if let mouseEvent = CGEvent(source: eventSource) {
             currentMousePos = mouseEvent.location
@@ -134,7 +131,6 @@ final class MappingEngine {
         pollTimer = nil
         trackedCursorPos = nil
 
-        // Collect and clear all state under lock, then post events outside the lock.
         let keysToRelease = activeKeys
         activeKeys.removeAll()
         let mouseButtonsToRelease = activeMouseButtons
@@ -149,7 +145,6 @@ final class MappingEngine {
         }
         lock.unlock()
 
-        // Post release events WITHOUT holding the lock to prevent main-thread deadlock.
         for keyCode in keysToRelease {
             if let event = CGEvent(
                 keyboardEventSource: eventSource,
@@ -173,7 +168,6 @@ final class MappingEngine {
         }
     }
 
-    /// Release a mouse button without touching the lock. Used only during shutdown.
     private func releaseMouse(button: MouseButton, cursorPos: CGPoint) {
         let mouseType: CGEventType = switch button {
         case .left: .leftMouseUp
@@ -189,7 +183,6 @@ final class MappingEngine {
         event.post(tap: .cghidEventTap)
     }
 
-    /// Call from main thread when the active profile changes.
     @MainActor
     func refreshProfileCache() {
         let pm = ProfileManager.shared
@@ -205,38 +198,43 @@ final class MappingEngine {
         }
     }
 
-    // MARK: - Polling (runs on background queue, no @MainActor)
+    // MARK: - Polling (runs on background queue)
 
+    /// Two-phase poll: compute state changes under lock, post CGEvents outside.
+    /// This prevents CGEvent.post latency from blocking the lock and starving stopOnQueue().
     private func poll() {
-        lock.lock()
-        defer { lock.unlock() }
+        var actions: [OutputAction] = []
+        var snapCenter: CGPoint?
 
-        guard pollTimer != nil else { return }
-        guard !cachedEntries.isEmpty else { return }
+        lock.lock()
+
+        guard pollTimer != nil, !cachedEntries.isEmpty else {
+            lock.unlock()
+            return
+        }
 
         let hid = HIDGamepadReader.shared
         let sensitivity = cachedSensitivity
         let entries = cachedEntries
         let boundary = cachedBoundary
-
         stickMovedThisFrame = false
 
+        // Phase 1: compute state changes and collect actions under lock.
         for entry in entries {
             let value = hid.value(for: entry.source)
             if entry.source.isAnalog {
-                processAnalogMappingLocked(value: value, entry: entry, sensitivity: sensitivity)
+                computeAnalogActions(value: value, entry: entry, sensitivity: sensitivity, actions: &actions)
             } else {
-                processButtonMappingLocked(value: value, entry: entry)
+                computeButtonActions(value: value, entry: entry, actions: &actions)
             }
         }
 
-        // Snap-to-center: if drag is active but stick is neutral, warp cursor
-        // back to the boundary center so the next direction starts from center.
-        let isDragging = !activeDragButtons.isEmpty
-        if isDragging {
+        // Drag snap-to-center.
+        if !activeDragButtons.isEmpty {
             if !stickMovedThisFrame {
                 if !hasSnappedToCenter, let boundary = boundary {
-                    snapCursorToBoundaryCenter(boundary)
+                    snapCenter = CGPoint(x: boundary.centerX, y: boundary.centerY)
+                    trackedCursorPos = snapCenter
                     hasSnappedToCenter = true
                 }
             } else {
@@ -245,41 +243,56 @@ final class MappingEngine {
         } else {
             hasSnappedToCenter = false
         }
+
+        lock.unlock()
+
+        // Phase 2: post all CGEvents OUTSIDE the lock.
+        // snapCenter warp must happen before other mouse actions.
+        if let center = snapCenter {
+            CGWarpMouseCursorPosition(center)
+            postSnapDrag(center: center)
+        }
+
+        dispatchActions(actions)
     }
 
-    // MARK: - Binary Button Mapping (lock must be held)
+    // MARK: - Phase 1: Compute actions (called under lock)
 
-    private func processButtonMappingLocked(value: Float, entry: MappingEntry) {
+    private func computeButtonActions(value: Float, entry: MappingEntry, actions: inout [OutputAction]) {
         guard let target = entry.target else { return }
         let isPressed = value > 0.5
 
         switch target {
         case .key(let keyCode):
             let keyIsDown = activeKeys.contains(keyCode)
-            if isPressed && !keyIsDown {
-                EngineLogger.log("Button pressed: \(entry.source.rawValue) val=\(value) -> key \(keyCode)")
-                postKeyEvent(keyCode: keyCode, down: true)
-            } else if !isPressed && keyIsDown {
-                EngineLogger.log("Button released: \(entry.source.rawValue) val=\(value) -> key \(keyCode)")
-                postKeyEvent(keyCode: keyCode, down: false)
+            if isPressed, !keyIsDown {
+                activeKeys.insert(keyCode)
+                actions.append(.keyDown(keyCode))
+            } else if !isPressed, keyIsDown {
+                activeKeys.remove(keyCode)
+                actions.append(.keyUp(keyCode))
             }
 
         case .mouseButton(let btn):
             let btnIsDown = activeMouseButtons.contains(btn)
-            if isPressed && !btnIsDown {
-                postMouseEvent(button: btn, down: true)
-            } else if !isPressed && btnIsDown {
-                postMouseEvent(button: btn, down: false)
+            let pos = mousePositionForAction()
+            if isPressed, !btnIsDown {
+                activeMouseButtons.insert(btn)
+                actions.append(.mouseDown(btn, cursorPos: pos))
+            } else if !isPressed, btnIsDown {
+                activeMouseButtons.remove(btn)
+                actions.append(.mouseUp(btn, cursorPos: pos))
             }
 
         case .mouseDrag(let btn):
             let btnIsDown = activeDragButtons.contains(btn)
-            if isPressed && !btnIsDown {
-                postMouseEvent(button: btn, down: true)
+            let pos = mousePositionForAction()
+            if isPressed, !btnIsDown {
                 activeDragButtons.insert(btn)
-            } else if !isPressed && btnIsDown {
+                actions.append(.mouseDown(btn, cursorPos: pos))
+            } else if !isPressed, btnIsDown {
                 activeDragButtons.remove(btn)
-                postMouseEvent(button: btn, down: false)
+                actions.append(.mouseUp(btn, cursorPos: pos))
             }
 
         case .mouseMove:
@@ -287,105 +300,115 @@ final class MappingEngine {
         }
     }
 
-    // MARK: - Analog Mapping (lock must be held)
-
-    private func processAnalogMappingLocked(value: Float, entry: MappingEntry, sensitivity: Float) {
+    private func computeAnalogActions(value: Float, entry: MappingEntry, sensitivity: Float, actions: inout [OutputAction]) {
         guard let target = entry.target else { return }
 
         switch target {
         case .key(let keyCode):
-            processAnalogToKeyLocked(value: value, keyCode: keyCode, entry: entry)
+            let shouldPress: Bool
+            switch entry.direction {
+            case .positive: shouldPress = value > entry.deadzone
+            case .negative: shouldPress = value < -entry.deadzone
+            }
+            let isPressed = activeKeys.contains(keyCode)
+            if shouldPress, !isPressed {
+                activeKeys.insert(keyCode)
+                actions.append(.keyDown(keyCode))
+            } else if !shouldPress, isPressed {
+                activeKeys.remove(keyCode)
+                actions.append(.keyUp(keyCode))
+            }
 
         case .mouseButton(let btn):
-            processAnalogToMouseButtonLocked(value: value, button: btn, threshold: entry.analogThreshold)
+            let shouldPress = value > entry.analogThreshold
+            let isPressed = activeMouseButtons.contains(btn)
+            let pos = mousePositionForAction()
+            if shouldPress, !isPressed {
+                activeMouseButtons.insert(btn)
+                actions.append(.mouseDown(btn, cursorPos: pos))
+            } else if !shouldPress, isPressed {
+                activeMouseButtons.remove(btn)
+                actions.append(.mouseUp(btn, cursorPos: pos))
+            }
 
-        case .mouseDrag:
-            break  // drag only applies to binary button inputs
+        case .mouseDrag(let btn):
+            let shouldDrag = value > entry.analogThreshold
+            let isDragging = activeDragButtons.contains(btn)
+            let pos = mousePositionForAction()
+            if shouldDrag, !isDragging {
+                activeDragButtons.insert(btn)
+                actions.append(.mouseDown(btn, cursorPos: pos))
+            } else if !shouldDrag, isDragging {
+                activeDragButtons.remove(btn)
+                actions.append(.mouseUp(btn, cursorPos: pos))
+            }
 
         case .mouseMove:
-            processAnalogToMouseMoveLocked(value: value, entry: entry, sensitivity: sensitivity)
+            computeMouseMove(value: value, entry: entry, sensitivity: sensitivity, actions: &actions)
         }
     }
 
-    // MARK: - Analog → Key (lock must be held)
-
-    private func processAnalogToKeyLocked(value: Float, keyCode: CGKeyCode, entry: MappingEntry) {
-        let shouldPress: Bool
+    private func computeMouseMove(value: Float, entry: MappingEntry, sensitivity: Float, actions: inout [OutputAction]) {
         switch entry.direction {
-        case .positive:
-            shouldPress = value > entry.deadzone
-        case .negative:
-            shouldPress = value < -entry.deadzone
-        }
-
-        let isPressed = activeKeys.contains(keyCode)
-        if shouldPress && !isPressed {
-            postKeyEvent(keyCode: keyCode, down: true)
-        } else if !shouldPress && isPressed {
-            postKeyEvent(keyCode: keyCode, down: false)
-        }
-    }
-
-    // MARK: - Analog → Mouse Button (lock must be held)
-
-    private func processAnalogToMouseButtonLocked(value: Float, button: MouseButton, threshold: Float) {
-        let shouldPress = value > threshold
-        let isPressed = activeMouseButtons.contains(button)
-
-        if shouldPress && !isPressed {
-            postMouseEvent(button: button, down: true)
-        } else if !shouldPress && isPressed {
-            postMouseEvent(button: button, down: false)
-        }
-    }
-
-    // MARK: - Analog → Mouse Move (lock must be held)
-
-    private func processAnalogToMouseMoveLocked(value: Float, entry: MappingEntry, sensitivity: Float) {
-        switch entry.direction {
-        case .positive:
-            guard value > entry.deadzone else { return }
-        case .negative:
-            guard value < -entry.deadzone else { return }
+        case .positive: guard value > entry.deadzone else { return }
+        case .negative: guard value < -entry.deadzone else { return }
         }
 
         let absValue = abs(value)
-        let deadzone = entry.deadzone
-        let normalized = Float((Double(absValue) - Double(deadzone)) / (1.0 - Double(deadzone)))
+        let normalized = Float((Double(absValue) - Double(entry.deadzone)) / (1.0 - Double(entry.deadzone)))
         let delta = normalized * sensitivity
 
-        var deltaX: Float = 0
-        var deltaY: Float = 0
-
+        var dx: Float = 0, dy: Float = 0
         switch entry.source {
         case .rightStickX, .leftStickX:
-            deltaX = delta * (value > 0 ? 1 : -1)
+            dx = delta * (value > 0 ? 1 : -1)
         case .rightStickY, .leftStickY:
-            // Flip Y axis: HID reports positive=up but screen Y is positive=down
-            deltaY = delta * (value > 0 ? 1 : -1)
+            dy = delta * (value > 0 ? 1 : -1)
         default:
             break
         }
 
-        if deltaX != 0 || deltaY != 0 {
+        if dx != 0 || dy != 0 {
             stickMovedThisFrame = true
-            postMouseMove(deltaX: deltaX, deltaY: deltaY)
+            actions.append(.mouseMove(dx, dy))
         }
     }
 
-    // MARK: - CGEvent: Keyboard (called from background queue)
+    /// Get cursor position for mouse button actions. Called under lock.
+    private func mousePositionForAction() -> CGPoint {
+        if let tracked = trackedCursorPos { return tracked }
+        if let event = CGEvent(source: eventSource) { return event.location }
+        return .zero
+    }
 
-    private func postKeyEvent(keyCode: CGKeyCode, down: Bool) {
+    // MARK: - Phase 2: Dispatch actions (called OUTSIDE lock)
+
+    private func dispatchActions(_ actions: [OutputAction]) {
+        for action in actions {
+            switch action {
+            case .keyDown(let code):
+                postKeyDown(code: code)
+            case .keyUp(let code):
+                postKeyUp(code: code)
+            case .mouseDown(let btn, let pos):
+                postMouseButtonDown(btn, at: pos)
+            case .mouseUp(let btn, let pos):
+                postMouseButtonUp(btn, at: pos)
+            case .mouseMove(let dx, let dy):
+                postMouseMoveAction(dx: dx, dy: dy)
+            case .warpCursor(let pos):
+                CGWarpMouseCursorPosition(pos)
+            }
+        }
+    }
+
+    private func postKeyDown(code: CGKeyCode) {
         guard let event = CGEvent(
             keyboardEventSource: eventSource,
-            virtualKey: keyCode,
-            keyDown: down
-        ) else {
-            EngineLogger.log("FAILED to create CGEvent for key \(keyCode)")
-            return
-        }
-
-        if down, let character = unicodeCharacter(for: keyCode) {
+            virtualKey: code,
+            keyDown: true
+        ) else { return }
+        if let character = unicodeCharacter(for: code) {
             let utf16 = Array(character.utf16)
             utf16.withUnsafeBufferPointer { buffer in
                 if let base = buffer.baseAddress {
@@ -393,17 +416,140 @@ final class MappingEngine {
                 }
             }
         }
-
-        event.flags = cgEventFlags(for: keyCode)
+        event.flags = cgEventFlags(for: code)
         event.post(tap: .cghidEventTap)
-        EngineLogger.log("Key \(down ? "DOWN" : "UP") code=\(keyCode)")
+    }
 
-        if down {
-            activeKeys.insert(keyCode)
+    private func postKeyUp(code: CGKeyCode) {
+        guard let event = CGEvent(
+            keyboardEventSource: eventSource,
+            virtualKey: code,
+            keyDown: false
+        ) else { return }
+        if let character = unicodeCharacter(for: code) {
+            let utf16 = Array(character.utf16)
+            utf16.withUnsafeBufferPointer { buffer in
+                if let base = buffer.baseAddress {
+                    event.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
+                }
+            }
+        }
+        event.flags = cgEventFlags(for: code)
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func postMouseButtonDown(_ button: MouseButton, at pos: CGPoint) {
+        let mouseType: CGEventType = switch button {
+        case .left: .leftMouseDown
+        case .right: .rightMouseDown
+        case .center: .otherMouseDown
+        }
+        guard let event = CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: mouseType,
+            mouseCursorPosition: pos,
+            mouseButton: button.cgMouseButton
+        ) else { return }
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func postMouseButtonUp(_ button: MouseButton, at pos: CGPoint) {
+        let mouseType: CGEventType = switch button {
+        case .left: .leftMouseUp
+        case .right: .rightMouseUp
+        case .center: .otherMouseUp
+        }
+        guard let event = CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: mouseType,
+            mouseCursorPosition: pos,
+            mouseButton: button.cgMouseButton
+        ) else { return }
+        event.post(tap: .cghidEventTap)
+    }
+
+    /// Post a mouse move/drag action. Tracks cursor position for subsequent mouse button events.
+    private func postMouseMoveAction(dx: Float, dy: Float) {
+        frameCount += 1
+        let shouldSync = frameCount % 60 == 0
+
+        let currentPos: CGPoint
+        if let tracked = trackedCursorPos, !shouldSync {
+            currentPos = tracked
+        } else if let event = CGEvent(source: eventSource) {
+            currentPos = event.location
+            trackedCursorPos = currentPos
         } else {
-            activeKeys.remove(keyCode)
+            currentPos = trackedCursorPos ?? .zero
+        }
+
+        let newPos = CGPoint(x: currentPos.x + Double(dx), y: currentPos.y + Double(dy))
+        CGWarpMouseCursorPosition(newPos)
+        trackedCursorPos = newPos
+
+        // Clamp to drag boundary when dragging.
+        let finalPos: CGPoint
+        if !activeDragButtons.isEmpty, let boundary = cachedBoundary {
+            let ddx = newPos.x - boundary.centerX
+            let ddy = newPos.y - boundary.centerY
+            let dist = sqrt(ddx * ddx + ddy * ddy)
+            if dist > boundary.radius {
+                let scale = boundary.radius / dist
+                finalPos = CGPoint(
+                    x: boundary.centerX + ddx * scale,
+                    y: boundary.centerY + ddy * scale
+                )
+                CGWarpMouseCursorPosition(finalPos)
+                trackedCursorPos = finalPos
+            } else {
+                finalPos = newPos
+            }
+        } else {
+            finalPos = newPos
+        }
+
+        let dragBtn = activeDragButtons.first
+        let eventType: CGEventType = switch dragBtn {
+        case .left: .leftMouseDragged
+        case .right: .rightMouseDragged
+        case .center: .otherMouseDragged
+        case nil: .mouseMoved
+        }
+
+        if let event = CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: eventType,
+            mouseCursorPosition: finalPos,
+            mouseButton: dragBtn?.cgMouseButton ?? .left
+        ) {
+            event.setIntegerValueField(.mouseEventDeltaX, value: Int64(dx))
+            event.setIntegerValueField(.mouseEventDeltaY, value: Int64(dy))
+            event.post(tap: .cghidEventTap)
         }
     }
+
+    /// Post a zero-delta drag event after snapping cursor to boundary center.
+    private func postSnapDrag(center: CGPoint) {
+        let dragBtn = activeDragButtons.first
+        let eventType: CGEventType = switch dragBtn {
+        case .left: .leftMouseDragged
+        case .right: .rightMouseDragged
+        case .center: .otherMouseDragged
+        case nil: .mouseMoved
+        }
+        if let event = CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: eventType,
+            mouseCursorPosition: center,
+            mouseButton: dragBtn?.cgMouseButton ?? .left
+        ) {
+            event.setIntegerValueField(.mouseEventDeltaX, value: 0)
+            event.setIntegerValueField(.mouseEventDeltaY, value: 0)
+            event.post(tap: .cghidEventTap)
+        }
+    }
+
+    // MARK: - Helpers
 
     private func unicodeCharacter(for keyCode: CGKeyCode) -> String? {
         let charMap: [CGKeyCode: String] = [
@@ -428,153 +574,6 @@ final class MappingEngine {
         default: return []
         }
     }
-
-    // MARK: - CGEvent: Mouse Button (called from background queue)
-
-    private func postMouseEvent(button: MouseButton, down: Bool) {
-        let mouseType: CGEventType
-        switch (button, down) {
-        case (.left, true): mouseType = .leftMouseDown
-        case (.left, false): mouseType = .leftMouseUp
-        case (.right, true): mouseType = .rightMouseDown
-        case (.right, false): mouseType = .rightMouseUp
-        case (.center, true): mouseType = .otherMouseDown
-        case (.center, false): mouseType = .otherMouseUp
-        }
-
-        // Use tracked cursor position; fall back to CGEvent source to avoid
-        // touching the main thread (which would deadlock if called while lock is held).
-        let mousePos: CGPoint
-        if let tracked = trackedCursorPos {
-            mousePos = tracked
-        } else if let mouseEvent = CGEvent(source: eventSource) {
-            mousePos = mouseEvent.location
-        } else {
-            mousePos = .zero
-        }
-
-        guard let event = CGEvent(
-            mouseEventSource: eventSource,
-            mouseType: mouseType,
-            mouseCursorPosition: mousePos,
-            mouseButton: button.cgMouseButton
-        ) else {
-            EngineLogger.log("FAILED to create mouse event for \(button.rawValue)")
-            return
-        }
-
-        event.post(tap: .cghidEventTap)
-        EngineLogger.log("Mouse \(down ? "DOWN" : "UP") \(button.rawValue)")
-
-        if down {
-            activeMouseButtons.insert(button)
-        } else {
-            activeMouseButtons.remove(button)
-        }
-    }
-
-    // MARK: - CGEvent: Mouse Move (called from background queue, lock must be held)
-
-    private func postMouseMove(deltaX: Float, deltaY: Float) {
-        frameCount += 1
-        let shouldSync = frameCount % 60 == 0
-
-        let currentPos: CGPoint
-        if let tracked = trackedCursorPos, !shouldSync {
-            currentPos = tracked
-        } else {
-            // Re-sync from CGEvent source — never touch main thread while holding lock.
-            if let mouseEvent = CGEvent(source: eventSource) {
-                currentPos = mouseEvent.location
-            } else {
-                currentPos = trackedCursorPos ?? .zero
-            }
-            trackedCursorPos = currentPos
-        }
-
-        let newPos = CGPoint(
-            x: currentPos.x + Double(deltaX),
-            y: currentPos.y + Double(deltaY)
-        )
-
-        CGWarpMouseCursorPosition(newPos)
-        trackedCursorPos = newPos
-
-        // Clamp to drag boundary when dragging.
-        let clampedPos: CGPoint
-        if !activeDragButtons.isEmpty, let boundary = cachedBoundary {
-            let dx = newPos.x - boundary.centerX
-            let dy = newPos.y - boundary.centerY
-            let dist = sqrt(dx * dx + dy * dy)
-            if dist > boundary.radius {
-                let scale = boundary.radius / dist
-                clampedPos = CGPoint(
-                    x: boundary.centerX + dx * scale,
-                    y: boundary.centerY + dy * scale
-                )
-                CGWarpMouseCursorPosition(clampedPos)
-                trackedCursorPos = clampedPos
-            } else {
-                clampedPos = newPos
-            }
-        } else {
-            clampedPos = newPos
-        }
-
-        // If a drag button is held, post a drag event instead of a plain move.
-        let dragBtn = activeDragButtons.first
-        let eventType: CGEventType
-        switch dragBtn {
-        case .left: eventType = .leftMouseDragged
-        case .right: eventType = .rightMouseDragged
-        case .center: eventType = .otherMouseDragged
-        case nil: eventType = .mouseMoved
-        }
-
-        if let event = CGEvent(
-            mouseEventSource: eventSource,
-            mouseType: eventType,
-            mouseCursorPosition: clampedPos,
-            mouseButton: dragBtn?.cgMouseButton ?? .left
-        ) {
-            event.setIntegerValueField(.mouseEventDeltaX, value: Int64(deltaX))
-            event.setIntegerValueField(.mouseEventDeltaY, value: Int64(deltaY))
-            event.post(tap: .cghidEventTap)
-        }
-    }
-
-    // MARK: - Drag Boundary (lock must be held)
-
-    private func snapCursorToBoundaryCenter(_ boundary: DragBoundary) {
-        let center = CGPoint(x: boundary.centerX, y: boundary.centerY)
-        CGWarpMouseCursorPosition(center)
-        trackedCursorPos = center
-
-        let dragBtn = activeDragButtons.first
-        let eventType: CGEventType
-        switch dragBtn {
-        case .left: eventType = .leftMouseDragged
-        case .right: eventType = .rightMouseDragged
-        case .center: eventType = .otherMouseDragged
-        case nil: eventType = .mouseMoved
-        }
-
-        if let event = CGEvent(
-            mouseEventSource: eventSource,
-            mouseType: eventType,
-            mouseCursorPosition: center,
-            mouseButton: dragBtn?.cgMouseButton ?? .left
-        ) {
-            event.setIntegerValueField(.mouseEventDeltaX, value: 0)
-            event.setIntegerValueField(.mouseEventDeltaY, value: 0)
-            event.post(tap: .cghidEventTap)
-        }
-
-        EngineLogger.log("SNAP cursor to boundary center (\(Int(boundary.centerX)), \(Int(boundary.centerY)))")
-    }
-
-    // MARK: - NSPoint Extension
-
 }
 
 private extension NSPoint {
