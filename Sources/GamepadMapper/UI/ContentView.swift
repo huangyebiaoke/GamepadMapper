@@ -120,6 +120,8 @@ struct ContentView: View {
         HStack(spacing: 12) {
             Button(engine.isActive ? "stop_mapping".localized : "start_mapping".localized) {
                 if engine.isActive {
+                    // Close settings window before stopping engine to prevent deadlock.
+                    NSApplication.shared.keyWindow?.close()
                     engine.stop()
                 } else {
                     guard permissions.hasAccessibilityPermission else { return }

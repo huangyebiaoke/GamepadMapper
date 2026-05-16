@@ -207,6 +207,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor
     @objc private func toggleMapping() {
         if engine.isActive {
+            // Close all sub-windows before stopping the engine.
+            // This triggers onDisappear in SwiftUI views which closes any open
+            // overlay window, preventing a potential main-thread deadlock.
+            closeAllWindows()
             engine.stop()
         } else {
             guard permissions.hasAccessibilityPermission else {
@@ -215,5 +219,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             engine.start()
         }
+    }
+
+    @MainActor
+    private func closeAllWindows() {
+        settingsWindow?.close()
+        settingsWindow = nil
+        debugWindow?.close()
+        debugWindow = nil
     }
 }
