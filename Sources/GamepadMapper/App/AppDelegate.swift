@@ -45,6 +45,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.stopMonitoring()
     }
 
+    @MainActor
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Close all open windows first to ensure clean teardown.
+        // This triggers onDisappear in SwiftUI views, which closes the overlay.
+        settingsWindow?.close()
+        settingsWindow = nil
+        return .terminateNow
+    }
+
     // MARK: - Menu Bar
 
     @MainActor
