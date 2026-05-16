@@ -111,19 +111,12 @@ final class HIDGamepadReader: @unchecked Sendable {
     }
 
     func stop() {
-        EngineLogger.log("HID: stop() called, waiting for lock...")
         lock.lock()
-        EngineLogger.log("HID: stop() lock acquired")
         defer { lock.unlock() }
-        guard isRunning else {
-            EngineLogger.log("HID: stop() - not running, returning")
-            return
-        }
+        guard isRunning else { return }
         isRunning = false
 
-        EngineLogger.log("HID: closing manager")
         if let mgr = manager {
-            // Unschedule on whatever run loop it's on (the background thread's)
             IOHIDManagerClose(mgr, IOOptionBits(kIOHIDOptionsTypeNone))
         }
         manager = nil
@@ -134,17 +127,19 @@ final class HIDGamepadReader: @unchecked Sendable {
         deviceName = ""
         isConnected = false
 
-        EngineLogger.log("HID: syncing connection state")
-        syncConnectionState(name: "", connected: false)
+        // Inline syncConnectionState body — caller already holds the lock.
+        // syncConnectionState() calls lock.lock() again → NSLock is non-recursive → DEADLOCK.
+        Task { @MainActor in
+            GameControllerManager.shared.isConnected = false
+            GameControllerManager.shared.controllerName = ""
+        }
 
-        // Stop the background thread's run loop
-        EngineLogger.log("HID: stopping run loop")
         if let rl = hidRunLoop {
             CFRunLoopStop(rl)
         }
         hidRunLoop = nil
         hidThread = nil
-        EngineLogger.log("HID: stop() done")
+        EngineLogger.log("HID: Manager closed, thread stopped")
     }
 
     func getState() -> State {

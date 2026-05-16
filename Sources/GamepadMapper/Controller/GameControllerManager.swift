@@ -64,19 +64,12 @@ final class GameControllerManager: @unchecked Sendable {
     }
 
     func stopMonitoring() {
-        EngineLogger.log("GC: stopMonitoring() called, waiting for lock...")
         lock.lock()
-        EngineLogger.log("GC: stopMonitoring() lock acquired")
         defer { lock.unlock() }
 
-        guard isMonitoring else {
-            EngineLogger.log("GC: stopMonitoring() - not monitoring, returning")
-            return
-        }
+        guard isMonitoring else { return }
         isMonitoring = false
 
-        EngineLogger.log("GC: removing \(handlerTokens.count) handlers")
-        // Remove all handler registrations
         for token in handlerTokens {
             NotificationCenter.default.removeObserver(token)
         }
@@ -86,7 +79,6 @@ final class GameControllerManager: @unchecked Sendable {
         isConnected = false
         controllerName = ""
         resetAllStates()
-        EngineLogger.log("GC: stopMonitoring() done")
     }
 
     // MARK: - Notifications
