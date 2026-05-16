@@ -135,8 +135,9 @@ final class MappingEngine {
 
         Task { @MainActor in
             isActive = false
-            HIDGamepadReader.shared.stop()
-            GameControllerManager.shared.stopMonitoring()
+            // Don't stop HID reader or GameControllerManager — they should
+            // stay connected so the user can start mapping again without
+            // reconnecting the controller.
         }
     }
 
