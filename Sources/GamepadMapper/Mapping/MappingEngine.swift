@@ -28,6 +28,8 @@ final class MappingEngine {
     private var activeMouseButtons: Set<MouseButton> = []
     /// Tracks which mouse buttons are held as drag anchors. Protected by lock.
     private var activeDragButtons: Set<MouseButton> = []
+    /// Tracks which mouse buttons are held via mouseMove combo (stick-based drag). Protected by lock.
+    private var comboDragButtons: Set<MouseButton> = []
 
     /// Protects mutable state accessed from the background poll queue.
     private let lock = NSLock()
@@ -41,6 +43,8 @@ final class MappingEngine {
     private var frameCount: Int = 0
     /// Whether any analog → mouseMove delta was produced this poll frame.
     private var stickMovedThisFrame: Bool = false
+    /// Whether any combo drag entry was active this frame (for post-poll release).
+    private var comboDragActiveThisFrame: Bool = false
     /// Whether we already snapped cursor to boundary center during the current drag session.
     private var hasSnappedToCenter: Bool = false
 
@@ -172,6 +176,7 @@ final class MappingEngine {
         let boundary = cachedBoundary
 
         stickMovedThisFrame = false
+        comboDragActiveThisFrame = false
 
         for entry in entries {
             let value = hid.value(for: entry.source)
@@ -196,6 +201,18 @@ final class MappingEngine {
             }
         } else {
             hasSnappedToCenter = false
+        }
+
+        // Combo drag cleanup: release any combo drag buttons that were NOT active this frame.
+        // This handles the case where the stick returns to neutral — all combo entries
+        // stop moving, so we release the buttons.
+        let comboToRelease = comboDragButtons.filter { btn in
+            !comboDragActiveThisFrame
+        }
+        for btn in comboToRelease {
+            activeDragButtons.remove(btn)
+            comboDragButtons.remove(btn)
+            postMouseEvent(button: btn, down: false)
         }
     }
 
@@ -309,12 +326,32 @@ final class MappingEngine {
     // MARK: - Analog → Mouse Move (lock must be held)
 
     private func processAnalogToMouseMoveLocked(value: Float, entry: MappingEntry, sensitivity: Float) {
+        let isMoving: Bool
         switch entry.direction {
         case .positive:
-            guard value > entry.deadzone else { return }
+            isMoving = value > entry.deadzone
         case .negative:
-            guard value < -entry.deadzone else { return }
+            isMoving = value < -entry.deadzone
         }
+
+        // Handle combo drag button: activate when stick moves, release when neutral.
+        if let comboBtn = entry.mouseMoveCombo {
+            let btnIsDown = comboDragButtons.contains(comboBtn)
+            if isMoving && !btnIsDown {
+                postMouseEvent(button: comboBtn, down: true)
+                activeDragButtons.insert(comboBtn)
+                comboDragButtons.insert(comboBtn)
+            } else if !isMoving && btnIsDown {
+                activeDragButtons.remove(comboBtn)
+                comboDragButtons.remove(comboBtn)
+                postMouseEvent(button: comboBtn, down: false)
+            }
+            if isMoving {
+                comboDragActiveThisFrame = true
+            }
+        }
+
+        guard isMoving else { return }
 
         let absValue = abs(value)
         let deadzone = entry.deadzone
@@ -563,6 +600,7 @@ final class MappingEngine {
             postMouseEvent(button: button, down: false)
         }
         activeDragButtons.removeAll()
+        comboDragButtons.removeAll()
     }
 
     // MARK: - NSPoint Extension

@@ -178,9 +178,18 @@ struct MappingEntry: Codable, Equatable, Identifiable {
     var direction: AnalogDirection = .positive
     var deadzone: Float = 0.2
     var analogThreshold: Float = 0.5
+    /// When target is .mouseMove, auto-hold this mouse button while the stick is moved.
+    /// Enables "stick → drag + move" combo without needing a separate trigger mapping.
+    var mouseMoveCombo: MouseButton?
 
     static func == (lhs: MappingEntry, rhs: MappingEntry) -> Bool {
         lhs.id == rhs.id && lhs.source == rhs.source && lhs.target == rhs.target
+            && lhs.mouseMoveCombo == rhs.mouseMoveCombo
+    }
+
+    var comboDisplayName: String {
+        guard let combo = mouseMoveCombo else { return "" }
+        return " + \(combo.dragDisplayName)"
     }
 }
 

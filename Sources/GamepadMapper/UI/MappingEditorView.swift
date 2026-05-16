@@ -133,7 +133,7 @@ struct MappingEditorView: View {
     }
 
     private func mappingRow(_ entry: MappingEntry) -> some View {
-        HStack {
+        HStack(spacing: 6) {
             Text(entry.source.displayName)
                 .font(.subheadline)
                 .frame(width: 120, alignment: .leading)
@@ -169,6 +169,13 @@ struct MappingEditorView: View {
             .frame(width: 140)
             .labelsHidden()
 
+            // Combo drag button selector — appears when target is mouseMove and source is a stick
+            if entry.target == .mouseMove,
+               entry.source == .leftStickX || entry.source == .leftStickY
+                || entry.source == .rightStickX || entry.source == .rightStickY {
+                comboDragPicker(entry: entry)
+            }
+
             Button {
                 removeMapping(entry)
             } label: {
@@ -182,6 +189,17 @@ struct MappingEditorView: View {
         .background(.quinary, in: RoundedRectangle(cornerRadius: 4))
         .opacity(entry.target == nil ? 0.45 : 1)
         .padding(.bottom, 2)
+    }
+
+    private func comboDragPicker(entry: MappingEntry) -> some View {
+        Picker("", selection: bindingForComboDrag(entry)) {
+            Text("combo_none".localized).tag(Optional<MouseButton>.none)
+            ForEach(MouseButton.allCases) { btn in
+                Text(btn.displayName).tag(Optional<MouseButton>.some(btn))
+            }
+        }
+        .frame(width: 110)
+        .labelsHidden()
     }
 
     private func bindingForDirection(_ entry: MappingEntry) -> Binding<AnalogDirection> {
@@ -201,6 +219,20 @@ struct MappingEditorView: View {
             set: { newTarget in
                 guard let index = profile.entries.firstIndex(where: { $0.id == entry.id }) else { return }
                 profile.entries[index].target = newTarget
+                // Clear combo when switching away from mouseMove
+                if newTarget != .mouseMove {
+                    profile.entries[index].mouseMoveCombo = nil
+                }
+            }
+        )
+    }
+
+    private func bindingForComboDrag(_ entry: MappingEntry) -> Binding<MouseButton?> {
+        Binding(
+            get: { entry.mouseMoveCombo },
+            set: { newCombo in
+                guard let index = profile.entries.firstIndex(where: { $0.id == entry.id }) else { return }
+                profile.entries[index].mouseMoveCombo = newCombo
             }
         )
     }

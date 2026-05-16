@@ -111,6 +111,10 @@
 "mouse_right_drag" = "右键拖动";
 "mouse_middle_drag" = "中键拖动";
 
+/* Combo Drag */
+"combo_none" = "无按键";
+"combo_connector" = "+";
+
 /* Permission States */
 "permission_granted" = "已授权";
 "permission_denied" = "未授权";

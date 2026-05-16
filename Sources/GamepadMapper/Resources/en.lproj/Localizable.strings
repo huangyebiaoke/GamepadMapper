@@ -111,6 +111,10 @@
 "mouse_right_drag" = "Right Drag";
 "mouse_middle_drag" = "Middle Drag";
 
+/* Combo Drag */
+"combo_none" = "None";
+"combo_connector" = "+";
+
 /* Permission States */
 "permission_granted" = "GRANTED";
 "permission_denied" = "DENIED";
