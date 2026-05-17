@@ -90,8 +90,16 @@ struct MappingEditorView: View {
             Divider()
 
             HStack {
-                Button("add_mapping".localized) {
-                    addMapping()
+                Menu("add_mapping".localized) {
+                    ForEach(sourceCategories, id: \.self) { category in
+                        Menu(category) {
+                            ForEach(ControllerElement.allCases.filter { $0.category == category }, id: \.self) { source in
+                                Button(source.displayName) {
+                                    addMapping(source: source)
+                                }
+                            }
+                        }
+                    }
                 }
                 .controlSize(.regular)
 
@@ -125,6 +133,10 @@ struct MappingEditorView: View {
 
     private var groupedEntries: [String: [MappingEntry]] {
         Dictionary(grouping: profile.entries) { $0.source.category }
+    }
+
+    private var sourceCategories: [String] {
+        ["category_dpad", "category_face_buttons", "category_shoulder", "category_triggers", "category_left_stick", "category_right_stick"].map(\.localized)
     }
 
     private func sectionHeader(_ category: String) -> some View {
@@ -284,10 +296,10 @@ struct MappingEditorView: View {
         profile.entries[entryIndex].comboTargets.remove(at: index)
     }
 
-    private func addMapping() {
+    private func addMapping(source: ControllerElement) {
         let entry = MappingEntry(
-            source: .buttonA,
-            target: .key(KeyMappings.space)
+            source: source,
+            target: nil
         )
         profile.entries.append(entry)
     }
