@@ -12,12 +12,6 @@ struct ProfileSelectorView: View {
     var body: some View {
         let _ = languageManager.currentLanguage
         VStack(spacing: 0) {
-            Text("profiles_title".localized)
-                .font(.headline)
-                .padding()
-
-            Divider()
-
             List {
                 ForEach(profileManager.profiles) { profile in
                     HStack {

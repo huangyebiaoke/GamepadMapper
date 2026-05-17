@@ -102,6 +102,26 @@
 "mouse_left" = "마우스 왼쪽";
 "mouse_right" = "마우스 오른쪽";
 "mouse_middle" = "마우스 가운데";
+"mouse_left_drag" = "왼쪽 끌기";
+"mouse_right_drag" = "오른쪽 끌기";
+"mouse_middle_drag" = "가운데 끌기";
+
+/* Combo Drag */
+"combo_none" = "없음";
+"combo_connector" = "+";
+
+/* Drag Boundary */
+"drag_boundary_title" = "드래그 경계";
+"drag_boundary_center" = "중앙:";
+"drag_boundary_not_set" = "미설정";
+"drag_boundary_set_center" = "오버레이 표시";
+"drag_boundary_radius" = "반지름: %d";
+
+/* Generic Combo */
+"add_combo" = "콤보 추가";
+
+/* Drag Boundary */
+"drag_boundary_center_screen" = "화면 중앙";
 
 /* Permission States */
 "permission_granted" = "허용됨";

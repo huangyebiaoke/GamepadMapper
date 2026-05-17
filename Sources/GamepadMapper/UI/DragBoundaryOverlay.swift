@@ -116,6 +116,7 @@ final class DragBoundaryOverlayWindow: NSPanel {
 
     /// Called at display refresh rate to update cursor and visuals from current mouse position.
     private func tick() {
+        guard isVisible else { return }
         guard NSScreen.main != nil else { return }
         let mousePos = NSEvent.mouseLocation
         // Check if mouse is inside our window bounds
@@ -166,11 +167,24 @@ final class DragBoundaryOverlayWindow: NSPanel {
         ), display: true)
     }
 
+    func updateCenter(_ newCenter: CGPoint) {
+        let screenFrame = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let flippedY = screenFrame.height - newCenter.y
+        let panelSize = self.frame.width
+        let newOrigin = CGPoint(
+            x: newCenter.x - panelSize / 2,
+            y: flippedY - panelSize / 2
+        )
+        circleCenter = newCenter
+        self.setFrameOrigin(newOrigin)
+    }
+
     @objc private func closeOverlay() {
         captureAndClose()
     }
 
     private func captureAndClose() {
+        stopDisplayLink()
         guard let screen = NSScreen.main else {
             onClose?(circleCenter)
             self.close()

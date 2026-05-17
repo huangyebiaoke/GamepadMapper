@@ -195,7 +195,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let debugView = DebugView()
         let hostingView = NSHostingView(rootView: debugView)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 470, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: 470, height: 370),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false

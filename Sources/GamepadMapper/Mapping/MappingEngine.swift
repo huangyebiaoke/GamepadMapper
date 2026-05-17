@@ -47,6 +47,9 @@ final class MappingEngine {
     private var comboDragActiveThisFrame: Bool = false
     /// Whether we already snapped cursor to boundary center during the current drag session.
     private var hasSnappedToCenter: Bool = false
+    /// Frame counter for analog key repeat. Re-send key-down every N polls to simulate
+    /// a continuously-held key, since CGEvent doesn't trigger macOS auto-repeat.
+    private var keyRepeatFrameCount: Int = 0
 
     private init() {
         self.eventSource = CGEventSource(stateID: .privateState)!
@@ -130,6 +133,7 @@ final class MappingEngine {
         trackedCursorPos = nil
         releaseAllKeysLocked()
         releaseAllMouseButtonsLocked()
+        keyRepeatFrameCount = 0
         cachedEntries = []
 
         if let assertion = activityAssertion {
@@ -187,6 +191,28 @@ final class MappingEngine {
             }
         }
 
+        // Stick-level combo drag: check overall stick displacement, not per-axis.
+        // When a stick has mouseDrag combo targets, activate if the stick is displaced
+        // in ANY direction, release only when the stick returns to center.
+        processStickComboDragsLocked(hid: hid, entries: entries)
+
+        // Key repeat: CGEvent key-down does NOT trigger macOS auto-repeat.
+        // Re-send key-down for all currently-held keys every ~100ms so that
+        // analog→key mappings produce continuous output while the stick is held.
+        keyRepeatFrameCount += 1
+        if keyRepeatFrameCount >= 12 {
+            keyRepeatFrameCount = 0
+            for keyCode in activeKeys {
+                if let event = CGEvent(
+                    keyboardEventSource: eventSource,
+                    virtualKey: keyCode,
+                    keyDown: true
+                ) {
+                    event.post(tap: .cghidEventTap)
+                }
+            }
+        }
+
         // Snap-to-center: if drag is active but stick is neutral, warp cursor
         // back to the boundary center so the next direction starts from center.
         let isDragging = !activeDragButtons.isEmpty
@@ -216,37 +242,33 @@ final class MappingEngine {
         }
     }
 
-    // MARK: - Binary Button Mapping (lock must be held)
+    // MARK: - Fire Single Target (lock must be held)
 
-    private func processButtonMappingLocked(value: Float, entry: MappingEntry) {
-        guard let target = entry.target else { return }
-        let isPressed = value > 0.5
-
+    /// Fire a single MappingTarget (press or release). Lock must be held.
+    private func fireTarget(_ target: MappingTarget, down: Bool) {
         switch target {
         case .key(let keyCode):
-            let keyIsDown = activeKeys.contains(keyCode)
-            if isPressed && !keyIsDown {
-                EngineLogger.log("Button pressed: \(entry.source.rawValue) val=\(value) -> key \(keyCode)")
+            let isDown = activeKeys.contains(keyCode)
+            if down && !isDown {
                 postKeyEvent(keyCode: keyCode, down: true)
-            } else if !isPressed && keyIsDown {
-                EngineLogger.log("Button released: \(entry.source.rawValue) val=\(value) -> key \(keyCode)")
+            } else if !down && isDown {
                 postKeyEvent(keyCode: keyCode, down: false)
             }
 
         case .mouseButton(let btn):
-            let btnIsDown = activeMouseButtons.contains(btn)
-            if isPressed && !btnIsDown {
+            let isDown = activeMouseButtons.contains(btn)
+            if down && !isDown {
                 postMouseEvent(button: btn, down: true)
-            } else if !isPressed && btnIsDown {
+            } else if !down && isDown {
                 postMouseEvent(button: btn, down: false)
             }
 
         case .mouseDrag(let btn):
-            let btnIsDown = activeDragButtons.contains(btn)
-            if isPressed && !btnIsDown {
+            let isDown = activeDragButtons.contains(btn)
+            if down && !isDown {
                 postMouseEvent(button: btn, down: true)
                 activeDragButtons.insert(btn)
-            } else if !isPressed && btnIsDown {
+            } else if !down && isDown {
                 activeDragButtons.remove(btn)
                 postMouseEvent(button: btn, down: false)
             }
@@ -256,23 +278,129 @@ final class MappingEngine {
         }
     }
 
+    // MARK: - Binary Button Mapping (lock must be held)
+
+    private func processButtonMappingLocked(value: Float, entry: MappingEntry) {
+        let isPressed = value > 0.5
+
+        // Collect all targets: main + combos
+        var allTargets: [MappingTarget] = []
+        if let target = entry.target {
+            allTargets.append(target)
+        }
+        allTargets.append(contentsOf: entry.comboTargets)
+
+        guard !allTargets.isEmpty else { return }
+
+        for target in allTargets {
+            fireTarget(target, down: isPressed)
+        }
+    }
+
     // MARK: - Analog Mapping (lock must be held)
 
     private func processAnalogMappingLocked(value: Float, entry: MappingEntry, sensitivity: Float) {
-        guard let target = entry.target else { return }
+        if let target = entry.target {
+            switch target {
+            case .key(let keyCode):
+                processAnalogToKeyLocked(value: value, keyCode: keyCode, entry: entry)
 
-        switch target {
-        case .key(let keyCode):
-            processAnalogToKeyLocked(value: value, keyCode: keyCode, entry: entry)
+            case .mouseButton(let btn):
+                processAnalogToMouseButtonLocked(value: value, button: btn, threshold: entry.analogThreshold)
 
-        case .mouseButton(let btn):
-            processAnalogToMouseButtonLocked(value: value, button: btn, threshold: entry.analogThreshold)
+            case .mouseDrag(let btn):
+                processAnalogToMouseDragLocked(value: value, button: btn, threshold: entry.analogThreshold)
 
-        case .mouseDrag(let btn):
-            processAnalogToMouseDragLocked(value: value, button: btn, threshold: entry.analogThreshold)
+            case .mouseMove:
+                processAnalogToMouseMoveLocked(value: value, entry: entry, sensitivity: sensitivity)
+            }
+        }
 
-        case .mouseMove:
-            processAnalogToMouseMoveLocked(value: value, entry: entry, sensitivity: sensitivity)
+        // Fire combo targets using the same analog activation logic
+        processAnalogComboTargetsLocked(value: value, entry: entry)
+    }
+
+    // MARK: - Analog → Combo Targets (lock must be held)
+
+    private func processAnalogComboTargetsLocked(value: Float, entry: MappingEntry) {
+        guard !entry.comboTargets.isEmpty else { return }
+
+        // For stick sources, mouseDrag combo targets are handled at the poll level
+        // using overall stick magnitude (processStickComboDragsLocked). Skip them here
+        // to prevent incorrect per-axis activation.
+        let hasMouseDragCombo = entry.comboTargets.contains { target in
+            if case .mouseDrag = target { true } else { false }
+        }
+        let isStickSource = entry.source == .leftStickX || entry.source == .leftStickY
+            || entry.source == .rightStickX || entry.source == .rightStickY
+            || entry.source == .leftThumbstickButton || entry.source == .rightThumbstickButton
+
+        if hasMouseDragCombo && isStickSource {
+            // Only process non-mouseDrag combo targets for this entry
+            for comboTarget in entry.comboTargets {
+                if case .mouseDrag = comboTarget { continue }
+                fireTarget(comboTarget, down: isAnalogComboActive(value: value, entry: entry))
+            }
+            return
+        }
+
+        let isActive = isAnalogComboActive(value: value, entry: entry)
+        for comboTarget in entry.comboTargets {
+            fireTarget(comboTarget, down: isActive)
+            if case .mouseDrag = comboTarget, isActive {
+                comboDragActiveThisFrame = true
+            }
+        }
+    }
+
+    /// Determine if a combo target should be active based on analog value and entry direction.
+    /// Always uses the entry's specific direction/deadzone — each mapping entry owns its combos.
+    private func isAnalogComboActive(value: Float, entry: MappingEntry) -> Bool {
+        switch entry.direction {
+        case .positive:
+            return value > entry.deadzone
+        case .negative:
+            return value < -entry.deadzone
+        }
+    }
+
+    // MARK: - Stick-Level Combo Drags (lock must be held)
+
+    /// Process mouseDrag combo targets for stick entries based on overall stick displacement.
+    /// Each stick (left/right) is evaluated as a whole: if ANY axis is beyond deadzone,
+    /// the combo drag stays active. Release only happens when the stick returns to center.
+    private func processStickComboDragsLocked(hid: HIDGamepadReader, entries: [MappingEntry]) {
+        let leftStickX = hid.value(for: .leftStickX)
+        let leftStickY = hid.value(for: .leftStickY)
+        let leftMagnitude = sqrt(leftStickX * leftStickX + leftStickY * leftStickY)
+
+        let rightStickX = hid.value(for: .rightStickX)
+        let rightStickY = hid.value(for: .rightStickY)
+        let rightMagnitude = sqrt(rightStickX * rightStickX + rightStickY * rightStickY)
+
+        for entry in entries {
+            guard entry.source.isAnalog else { continue }
+
+            // Only handle stick sources (not triggers)
+            let magnitude: Float
+            switch entry.source {
+            case .leftStickX, .leftStickY, .leftThumbstickButton:
+                magnitude = leftMagnitude
+            case .rightStickX, .rightStickY, .rightThumbstickButton:
+                magnitude = rightMagnitude
+            default: continue
+            }
+
+            // Use the entry's deadzone to determine "stick is displaced"
+            let isActive = magnitude > entry.deadzone
+            if isActive { comboDragActiveThisFrame = true }
+
+            // Fire mouseDrag combo targets based on overall stick magnitude
+            for comboTarget in entry.comboTargets {
+                if case .mouseDrag = comboTarget {
+                    fireTarget(comboTarget, down: isActive)
+                }
+            }
         }
     }
 

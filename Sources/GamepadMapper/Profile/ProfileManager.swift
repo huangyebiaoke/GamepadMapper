@@ -38,7 +38,10 @@ final class ProfileManager {
 
         for file in files where file.pathExtension == "json" {
             if let data = try? Data(contentsOf: file),
-               let profile = try? JSONDecoder().decode(MappingProfile.self, from: data) {
+               var profile = try? JSONDecoder().decode(MappingProfile.self, from: data) {
+                for i in profile.entries.indices {
+                    profile.entries[i].migrateLegacyCombo()
+                }
                 profiles.append(profile)
             }
         }
@@ -119,12 +122,18 @@ final class ProfileManager {
     // MARK: - Reset to Default
 
     func resetToDefault() -> MappingProfile {
-        // Delete all profiles with the default localized name
-        let defaultName = "profile_name_default".localized
-        let defaultsToDelete = profiles.filter { $0.name == defaultName }
-        for p in defaultsToDelete {
-            deleteProfile(p)
+        guard let current = activeProfile else {
+            return resetToDefaultFallback()
         }
+        let defaults = MappingProfile.defaultProfile()
+        var reset = current
+        reset.entries = defaults.entries
+        reset.mouseSensitivity = defaults.mouseSensitivity
+        reset.dragBoundary = nil
+        return saveProfile(reset)
+    }
+
+    private func resetToDefaultFallback() -> MappingProfile {
         let profile = MappingProfile.defaultProfile()
         let saved = saveProfile(profile)
         activeProfileID = saved.id

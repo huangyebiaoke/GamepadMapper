@@ -137,7 +137,7 @@ struct ContentView: View {
         }
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 550, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 480),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -173,7 +173,7 @@ struct ContentView: View {
         }
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 380),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 350),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false

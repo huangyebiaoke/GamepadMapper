@@ -182,14 +182,25 @@ struct MappingEntry: Codable, Equatable, Identifiable {
     /// Enables "stick → drag + move" combo without needing a separate trigger mapping.
     var mouseMoveCombo: MouseButton?
 
+    var comboTargets: [MappingTarget] = []
+
+    /// Migrates legacy mouseMoveCombo into comboTargets. Call after decoding old profiles.
+    mutating func migrateLegacyCombo() {
+        if let combo = mouseMoveCombo,
+           !comboTargets.contains(.mouseDrag(combo)) {
+            comboTargets.append(.mouseDrag(combo))
+        }
+    }
+
     static func == (lhs: MappingEntry, rhs: MappingEntry) -> Bool {
         lhs.id == rhs.id && lhs.source == rhs.source && lhs.target == rhs.target
             && lhs.mouseMoveCombo == rhs.mouseMoveCombo
+            && lhs.comboTargets == rhs.comboTargets
     }
 
     var comboDisplayName: String {
-        guard let combo = mouseMoveCombo else { return "" }
-        return " + \(combo.dragDisplayName)"
+        let parts = comboTargets.map(\.displayName)
+        return parts.isEmpty ? "" : " + " + parts.joined(separator: " + ")
     }
 }
 

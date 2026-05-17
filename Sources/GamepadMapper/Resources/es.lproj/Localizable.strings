@@ -102,6 +102,26 @@
 "mouse_left" = "Clic izquierdo";
 "mouse_right" = "Clic derecho";
 "mouse_middle" = "Clic central";
+"mouse_left_drag" = "Arrastre izquierdo";
+"mouse_right_drag" = "Arrastre derecho";
+"mouse_middle_drag" = "Arrastre central";
+
+/* Combo Drag */
+"combo_none" = "Ninguno";
+"combo_connector" = "+";
+
+/* Drag Boundary */
+"drag_boundary_title" = "Límite de arrastre";
+"drag_boundary_center" = "Centro:";
+"drag_boundary_not_set" = "Sin configurar";
+"drag_boundary_set_center" = "Mostrar superposición";
+"drag_boundary_radius" = "Radio: %d";
+
+/* Generic Combo */
+"add_combo" = "Añadir combo";
+
+/* Drag Boundary */
+"drag_boundary_center_screen" = "Centrar en pantalla";
 
 /* Permission States */
 "permission_granted" = "CONCEDIDO";

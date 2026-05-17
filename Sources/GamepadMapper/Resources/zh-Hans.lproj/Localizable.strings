@@ -115,6 +115,12 @@
 "combo_none" = "无按键";
 "combo_connector" = "+";
 
+/* Generic Combo */
+"add_combo" = "添加组合键";
+
+/* Drag Boundary */
+"drag_boundary_center_screen" = "居中到屏幕";
+
 /* Permission States */
 "permission_granted" = "已授权";
 "permission_denied" = "未授权";

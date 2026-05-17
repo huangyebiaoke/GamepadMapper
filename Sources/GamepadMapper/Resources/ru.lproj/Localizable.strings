@@ -102,6 +102,26 @@
 "mouse_left" = "Левая кнопка мыши";
 "mouse_right" = "Правая кнопка мыши";
 "mouse_middle" = "Средняя кнопка мыши";
+"mouse_left_drag" = "Перетаскивание левой кнопкой";
+"mouse_right_drag" = "Перетаскивание правой кнопкой";
+"mouse_middle_drag" = "Перетаскивание средней кнопкой";
+
+/* Combo Drag */
+"combo_none" = "Нет";
+"combo_connector" = "+";
+
+/* Drag Boundary */
+"drag_boundary_title" = "Граница перетаскивания";
+"drag_boundary_center" = "Центр:";
+"drag_boundary_not_set" = "Не задан";
+"drag_boundary_set_center" = "Показать оверлей";
+"drag_boundary_radius" = "Радиус: %d";
+
+/* Generic Combo */
+"add_combo" = "Добавить комбо";
+
+/* Drag Boundary */
+"drag_boundary_center_screen" = "По центру экрана";
 
 /* Permission States */
 "permission_granted" = "РАЗРЕШЕНО";

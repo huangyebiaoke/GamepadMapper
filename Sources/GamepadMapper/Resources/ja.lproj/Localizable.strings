@@ -102,6 +102,26 @@
 "mouse_left" = "マウス左";
 "mouse_right" = "マウス右";
 "mouse_middle" = "マウス中央";
+"mouse_left_drag" = "左ドラッグ";
+"mouse_right_drag" = "右ドラッグ";
+"mouse_middle_drag" = "中ドラッグ";
+
+/* Combo Drag */
+"combo_none" = "なし";
+"combo_connector" = "+";
+
+/* Drag Boundary */
+"drag_boundary_title" = "ドラッグ境界";
+"drag_boundary_center" = "中心:";
+"drag_boundary_not_set" = "未設定";
+"drag_boundary_set_center" = "オーバーレイ表示";
+"drag_boundary_radius" = "半径: %d";
+
+/* Generic Combo */
+"add_combo" = "コンボを追加";
+
+/* Drag Boundary */
+"drag_boundary_center_screen" = "画面中央に配置";
 
 /* Permission States */
 "permission_granted" = "許可済み";

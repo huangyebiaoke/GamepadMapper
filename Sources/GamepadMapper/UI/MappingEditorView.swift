@@ -14,10 +14,6 @@ struct MappingEditorView: View {
     var body: some View {
         let _ = languageManager.currentLanguage
         VStack(spacing: 0) {
-            Text(String(format: "edit_mappings_title".localized, profile.name))
-                .font(.headline)
-                .padding()
-
             HStack {
                 Text(String(format: "sensitivity_label".localized, Int(sensitivity)))
                     .font(.subheadline)
@@ -49,6 +45,13 @@ struct MappingEditorView: View {
                             .font(.caption)
                             .monospaced()
                         Spacer()
+                        Button {
+                            centerBoundary()
+                        } label: {
+                            Image(systemName: "scope")
+                        }
+                        .controlSize(.small)
+                        .help("drag_boundary_center_screen".localized)
                         Button("drag_boundary_set_center".localized) {
                             showOverlay()
                         }
@@ -102,7 +105,7 @@ struct MappingEditorView: View {
             }
             .padding()
         }
-        .frame(minWidth: 500, minHeight: 400)
+        .frame(minWidth: 600, minHeight: 400)
         .onAppear {
             sensitivity = Float(profile.mouseSensitivity)
             if let b = profile.dragBoundary {
@@ -166,15 +169,27 @@ struct MappingEditorView: View {
                 }
                 Text("target_mouse_move".localized).tag(Optional<MappingTarget>.some(MappingTarget.mouseMove))
             }
-            .frame(width: 140)
+            .frame(width: 130)
             .labelsHidden()
 
-            // Combo drag button selector — appears when target is mouseMove and source is a stick
-            if entry.target == .mouseMove,
-               entry.source == .leftStickX || entry.source == .leftStickY
-                || entry.source == .rightStickX || entry.source == .rightStickY {
-                comboDragPicker(entry: entry)
+            // Combo target chips
+            ForEach(0..<entry.comboTargets.count, id: \.self) { index in
+                if index < entry.comboTargets.count {
+                    comboChip(entry: entry, index: index)
+                }
             }
+
+            // Combo add button
+            Menu {
+                comboMenuContent(entry: entry)
+            } label: {
+                Image(systemName: "plus.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(entry.comboTargets.count >= 2)
+            .help("add_combo".localized)
 
             Button {
                 removeMapping(entry)
@@ -191,15 +206,46 @@ struct MappingEditorView: View {
         .padding(.bottom, 2)
     }
 
-    private func comboDragPicker(entry: MappingEntry) -> some View {
-        Picker("", selection: bindingForComboDrag(entry)) {
-            Text("combo_none".localized).tag(Optional<MouseButton>.none)
+    private func comboChip(entry: MappingEntry, index: Int) -> some View {
+        let target = entry.comboTargets[index]
+        return HStack(spacing: 2) {
+            Text(target.displayName)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Button {
+                removeComboTarget(entry: entry, index: index)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(.quaternary, in: Capsule())
+    }
+
+    private func comboMenuContent(entry: MappingEntry) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(KeyMappings.allKeys, id: \.code) { key in
+                Button(key.name) {
+                    addComboTarget(entry: entry, target: .key(key.code))
+                }
+            }
+            Divider()
             ForEach(MouseButton.allCases) { btn in
-                Text(btn.displayName).tag(Optional<MouseButton>.some(btn))
+                Button(btn.displayName) {
+                    addComboTarget(entry: entry, target: .mouseButton(btn))
+                }
+            }
+            ForEach(MouseButton.allCases) { btn in
+                Button(btn.dragDisplayName) {
+                    addComboTarget(entry: entry, target: .mouseDrag(btn))
+                }
             }
         }
-        .frame(width: 110)
-        .labelsHidden()
+        .padding(4)
     }
 
     private func bindingForDirection(_ entry: MappingEntry) -> Binding<AnalogDirection> {
@@ -219,22 +265,23 @@ struct MappingEditorView: View {
             set: { newTarget in
                 guard let index = profile.entries.firstIndex(where: { $0.id == entry.id }) else { return }
                 profile.entries[index].target = newTarget
-                // Clear combo when switching away from mouseMove
-                if newTarget != .mouseMove {
-                    profile.entries[index].mouseMoveCombo = nil
-                }
             }
         )
     }
 
-    private func bindingForComboDrag(_ entry: MappingEntry) -> Binding<MouseButton?> {
-        Binding(
-            get: { entry.mouseMoveCombo },
-            set: { newCombo in
-                guard let index = profile.entries.firstIndex(where: { $0.id == entry.id }) else { return }
-                profile.entries[index].mouseMoveCombo = newCombo
-            }
-        )
+    private func addComboTarget(entry: MappingEntry, target: MappingTarget) {
+        if case .mouseMove = target { return } // mouseMove is not a valid combo target
+        guard let index = profile.entries.firstIndex(where: { $0.id == entry.id }) else { return }
+        if let mainTarget = profile.entries[index].target, target == mainTarget { return }
+        guard !profile.entries[index].comboTargets.contains(target) else { return }
+        profile.entries[index].comboTargets.append(target)
+    }
+
+    private func removeComboTarget(entry: MappingEntry, index: Int) {
+        guard let entryIndex = profile.entries.firstIndex(where: { $0.id == entry.id }) else { return }
+        let comboCount = profile.entries[entryIndex].comboTargets.count
+        guard index >= 0, index < comboCount else { return }
+        profile.entries[entryIndex].comboTargets.remove(at: index)
     }
 
     private func addMapping() {
@@ -247,6 +294,21 @@ struct MappingEditorView: View {
 
     private func removeMapping(_ entry: MappingEntry) {
         profile.entries.removeAll { $0.id == entry.id }
+    }
+
+    private func centerBoundary() {
+        let screen = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let centerX = screen.width / 2
+        let centerY = screen.height / 2
+
+        if profile.dragBoundary == nil {
+            profile.dragBoundary = DragBoundary(centerX: centerX, centerY: centerY, radius: boundaryRadius)
+        } else {
+            profile.dragBoundary?.centerX = centerX
+            profile.dragBoundary?.centerY = centerY
+        }
+        boundaryCenterText = "(\(Int(centerX)), \(Int(centerY)))"
+        overlayWindow?.updateCenter(CGPoint(x: centerX, y: centerY))
     }
 
     private func showOverlay() {

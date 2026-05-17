@@ -115,6 +115,12 @@
 "combo_none" = "None";
 "combo_connector" = "+";
 
+/* Generic Combo */
+"add_combo" = "Add Combo";
+
+/* Drag Boundary */
+"drag_boundary_center_screen" = "Center on Screen";
+
 /* Permission States */
 "permission_granted" = "GRANTED";
 "permission_denied" = "DENIED";

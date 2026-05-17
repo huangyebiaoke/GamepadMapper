@@ -10,9 +10,6 @@ struct DebugView: View {
     var body: some View {
         let _ = languageManager.currentLanguage
         VStack(alignment: .leading, spacing: 12) {
-            Text("debug_title".localized)
-                .font(.headline)
-
             Group {
                 Text("debug_permission".localized + " **" + (permissions.hasAccessibilityPermission ? "permission_granted".localized : "permission_denied".localized) + "**")
                 Text("debug_controller".localized + " **" + (controller.isConnected ? controller.controllerName : "no".localized) + "**")
